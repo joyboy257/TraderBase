@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { connectPolygonWS, getQuote, TickerPrice } from "@/lib/polygon/client";
 
 export interface PolygonPrices {
@@ -14,7 +14,6 @@ export interface PolygonPrices {
 export function usePolygonPrices(tickers: string[]): PolygonPrices {
   const [prices, setPrices] = useState<Map<string, TickerPrice>>(() => new Map());
   const [isConnected, setIsConnected] = useState(false);
-  const tickersRef = useRef(tickers);
 
   useEffect(() => {
     if (tickers.length === 0) return;
@@ -60,7 +59,7 @@ export function usePolygonPrices(tickers: string[]): PolygonPrices {
       cleanup();
       setIsConnected(false);
     };
-  }, [tickers.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tickers.join(",")]);
 
   return { prices, isConnected };
 }

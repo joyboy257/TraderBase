@@ -29,7 +29,7 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Protect app routes
+  // Protect app routes (API routes are excluded from middleware via matcher)
   if (
     !user &&
     (request.nextUrl.pathname.startsWith("/dashboard") ||
