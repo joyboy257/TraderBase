@@ -6,28 +6,15 @@ import { Card } from "@/components/ui/Card";
 import { formatPercent, formatCompactNumber } from "@/lib/utils";
 import { Users, TrendingUp, Zap } from "lucide-react";
 import { FollowButton as FollowButtonGrid } from "@/components/social/FollowButtonGrid";
+import { getTopTraders } from "@/lib/traders";
 
 export default async function TradersPage() {
   const supabase = await createClient();
 
-  // Fetch verified traders
-  const { data: traders } = await supabase
-    .from("profiles")
-    .select("id, username, display_name, avatar_url, bio, is_trader, is_verified")
-    .eq("is_trader", true)
-    .eq("is_verified", true)
-    .limit(20);
+  // Use getTopTraders utility for consistent ordering
+  const topTraders = await getTopTraders(20);
 
-  const traderIds = traders?.map(t => t.id) ?? [];
-
-  // Get follower counts for each trader
-  const { data: followerCounts } = traderIds.length > 0
-    ? await supabase
-        .from("follows")
-        .select("leader_id")
-        .in("leader_id", traderIds)
-        .eq("is_active", true)
-    : { data: [] };
+  const traderIds = topTraders.map(t => t.id);
 
   // Get signal counts for each trader
   const { data: signalCounts } = traderIds.length > 0
@@ -42,12 +29,6 @@ export default async function TradersPage() {
   const signalCountMap: Record<string, number> = {};
   (signalCounts ?? []).forEach(s => {
     signalCountMap[s.user_id] = (signalCountMap[s.user_id] || 0) + 1;
-  });
-
-  // Count followers per user
-  const followerCountMap: Record<string, number> = {};
-  (followerCounts ?? []).forEach(f => {
-    followerCountMap[f.leader_id] = (followerCountMap[f.leader_id] || 0) + 1;
   });
 
   // Build follower count for current user to know who's followed
@@ -70,7 +51,7 @@ export default async function TradersPage() {
             Traders
           </h1>
           <p className="text-sm text-[var(--color-text-muted)] mt-0.5">
-            {(traders ?? []).length} verified traders · All linked to live brokerage accounts
+            {topTraders.length} verified traders · All linked to live brokerage accounts
           </p>
         </div>
       </div>
@@ -84,7 +65,7 @@ export default async function TradersPage() {
           <div>
             <p className="text-xs text-[var(--color-text-muted)]">Total Followers</p>
             <p className="font-data font-semibold text-[var(--color-text-primary)]">
-              {formatCompactNumber(Object.values(followerCountMap).reduce((a, b) => a + b, 0))}
+              {formatCompactNumber(topTraders.reduce((sum, t) => sum + t.followers_count, 0))}
             </p>
           </div>
         </Card>
@@ -112,8 +93,7 @@ export default async function TradersPage() {
 
       {/* Traders grid */}
       <div className="grid md:grid-cols-2 gap-4">
-        {(traders ?? []).map((trader) => {
-          const followerCount = followerCountMap[trader.id] || 0;
+        {(topTraders ?? []).map((trader) => {
           const signalCount = signalCountMap[trader.id] || 0;
           const isFollowing = followedIds.has(trader.id);
 
@@ -147,15 +127,11 @@ export default async function TradersPage() {
                 </div>
               </div>
 
-              <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-4 line-clamp-2">
-                {trader.bio ?? "No bio provided."}
-              </p>
-
               <div className="flex items-center gap-6 mb-4">
                 <div>
                   <p className="text-xs text-[var(--color-text-muted)] mb-0.5">Followers</p>
                   <p className="font-data font-semibold text-sm text-[var(--color-text-primary)]">
-                    {formatCompactNumber(followerCount)}
+                    {formatCompactNumber(trader.followers_count)}
                   </p>
                 </div>
                 <div>

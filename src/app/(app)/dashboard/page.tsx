@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { MarketMovers } from "@/components/market/MarketMovers";
 import { CopySignalButton } from "@/components/social/CopySignalButton";
+import { OnboardingCheck } from "@/components/onboarding/OnboardingCheck";
 import { formatCurrency, formatPercent, timeAgo } from "@/lib/utils";
 import Link from "next/link";
 import {
@@ -23,7 +24,7 @@ export default async function DashboardPage() {
   // Fetch user profile
   const { data: profile } = await supabase
     .from("profiles")
-    .select("display_name, username")
+    .select("id, display_name, username, avatar_url, onboarding_complete, onboarding_path, onboarding_step")
     .eq("id", userId)
     .single();
 
@@ -31,7 +32,7 @@ export default async function DashboardPage() {
   // TODO: Table positions needs current_price and unrealized_pnl populated by a server process
 
   // All queries run in parallel — none depend on each other's results
-  const [positionsResult, signalsResult, followedLeadersResult] = await Promise.all([
+  const [positionsResult, signalsResult, followedLeadersResult, userSignalsResult] = await Promise.all([
     supabase
       .from("positions")
       .select("current_price, unrealized_pnl, quantity")
@@ -48,11 +49,24 @@ export default async function DashboardPage() {
       .eq("follower_id", userId)
       .eq("is_active", true)
       .limit(2),
+    supabase
+      .from("signals")
+      .select("id, user_id")
+      .eq("user_id", userId)
+      .eq("is_active", true),
   ]);
 
   const positions = positionsResult.data;
   const signals = signalsResult.data;
   const followedLeaders = followedLeadersResult.data as { leader_id: string; copy_ratio: number; profiles: { id: string; username: string; display_name: string | null; avatar_url: string | null } | null }[] | null;
+  const userSignals = userSignalsResult.data ?? [];
+
+  const onboardingProfile = profile ? {
+    ...profile,
+    onboarding_complete: profile.onboarding_complete ?? false,
+    onboarding_path: profile.onboarding_path as "trader" | "copier" | null,
+    onboarding_step: profile.onboarding_step ?? 0,
+  } : null;
 
   const portfolioValue = positions?.reduce(
     (sum, p) => sum + (Number(p.quantity || 0) * Number(p.current_price || 0)),
@@ -63,6 +77,15 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* Onboarding wizard + post-wizard banner */}
+      {onboardingProfile && (
+        <OnboardingCheck
+          profile={onboardingProfile}
+          userSignals={userSignals}
+          followedLeaders={followedLeaders ?? []}
+        />
+      )}
+
       {/* Portfolio Hero Row */}
       <div className="flex items-start justify-between gap-6">
         <div>

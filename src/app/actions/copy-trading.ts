@@ -22,6 +22,28 @@ export async function triggerCopyTrade(followerId: string, signalId: string): Pr
       return { success: false, error: "Forbidden: Cannot trigger copy trade for another user" };
     }
 
+    // --- Copy barrier: copier must have brokerage linked (R28, R29) ---
+    // Fetch the follower's onboarding state
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("onboarding_complete, onboarding_path")
+      .eq("id", followerId)
+      .single();
+
+    if (profile?.onboarding_complete && profile.onboarding_path === "copier") {
+      // Copier — verify they have an active brokerage connection
+      const { data: brokerage } = await supabase
+        .from("brokerage_connections")
+        .select("id")
+        .eq("user_id", followerId)
+        .eq("is_active", true)
+        .single();
+
+      if (!brokerage) {
+        return { success: false, error: "NO_BROKERAGE" };
+      }
+    }
+
     return await executeCopyTrade(followerId, signalId);
 
   } catch (error) {

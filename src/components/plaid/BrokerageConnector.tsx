@@ -7,9 +7,12 @@ import { Loader2, Plus } from "lucide-react";
 
 interface BrokerageConnectorProps {
   onConnected?: () => void;
+  /** Skip window.location.reload() after successful connection.
+   *  Use when the caller (e.g. OnboardingWizard) manages post-connection state. */
+  skipReload?: boolean;
 }
 
-export function BrokerageConnector({ onConnected }: BrokerageConnectorProps) {
+export function BrokerageConnector({ onConnected, skipReload }: BrokerageConnectorProps) {
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,8 +32,9 @@ export function BrokerageConnector({ onConnected }: BrokerageConnectorProps) {
           throw new Error(data.error ?? "Failed to connect brokerage");
         }
         onConnected?.();
-        // Force page refresh to show new connection
-        window.location.reload();
+        if (!skipReload) {
+          window.location.reload();
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to connect brokerage");
       } finally {
