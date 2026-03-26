@@ -24,43 +24,22 @@ All P0 items have been resolved as of commit `113b1c2`.
 
 ## P1 — High Priority
 
-### [ ] Copy trading executor is an MVP stub
-**File:** `src/lib/copy-trading/executor.ts:127`
-> `executeCopyTrade` logs a warning and records `status: 'pending'` but never actually places a brokerage order. The comment says "actual execution requires securities master."
->
-> **Fix:** Integrate with Plaid `investmentsOrdersPost` API. Requires looking up `securities_id` from the user's held securities by ticker, then placing a SELL (close) or BUY (open) order. Until then, copy trading is non-functional.
+All P1 items resolved as of commit `c792560`.
 
----
+### [x] ~~Copy trading executor is MVP stub~~
+**Fixed:** `executeCopyTrade` now decrypts token, looks up `security_id` via `getInvestmentHoldings`, places real market orders via `postInvestmentOrder()` (direct axios call to `/investments/orders/post`). BUY/SELL with correct quantities. Status updated to 'executed' or 'failed'.
 
-### [ ] Webhook type wrong — uses TRANSACTIONS_SYNC instead of INVESTMENTS
-**File:** `src/app/api/webhooks/plaid/route.ts:21`
-> The condition checks `webhookType === 'TRANSACTIONS_SYNC'` but Plaid Investment product fires `webhook_type: 'INVESTMENTS'`. This means position sync webhooks may never be triggered.
->
-> **Fix:** Check `webhookType === 'INVESTMENTS'` (already done in the current fix as `INVESTMENTS`). Verify Plaid sandbox/tested with an investment item webhook to confirm the correct type value.
+### [x] ~~Webhook type wrong~~
+**Fixed:** Already resolved in prior review pass (INVESTMENTS check).
 
----
+### [x] ~~Chat realtime filter — SQL injection~~
+**Fixed:** Already resolved in prior review pass (roomId state + parameterized filter).
 
-### [ ] Chat realtime filter — needs security verification
-**File:** `src/app/(app)/chat/[ticker]/ChatRoom.tsx:68`
-> The filter uses `room_id=eq.{roomId}` where `roomId` comes from `useState` (set after room lookup). This avoids the SQL injection but the `rooms.id` from Supabase is a UUID, not user-controlled.
->
-> **Fix (pending verification):** Confirm with Plaid/Supabase that the `eq.` filter format is parameterized and not string-interpolated. If in doubt, use a Supabase RPC function or validate `roomId` is a valid UUID with a regex before use.
+### [x] ~~processAllFollowers — duplicate copied_trade rows~~
+**Fixed:** `executeCopyTrade` now checks for existing processed copy before executing. Migration adds `idempotency_key` unique index. Returns early if `(signal_id, user_id)` already exists with non-failed status.
 
----
-
-### [ ] processAllFollowers — duplicate signal triggers create duplicate copied_trade rows
-**File:** `src/lib/copy-trading/executor.ts:221`
-> No idempotency key. If `processAllFollowers(signalId)` is called twice rapidly (duplicate webhook, double server action click), both calls insert `copied_trade` rows without conflict.
->
-> **Fix:** Add a unique constraint on `(signal_id, user_id)` in `copied_trades` table, or add an `idempotency_key` column with a unique index. Use `ON CONFLICT DO NOTHING` in the upsert.
-
----
-
-### [ ] Polygon getQuote — getQuote returns stale data
-**File:** `src/lib/polygon/client.ts`
-> The `/range/1/day/1/now` endpoint returns the current day's bar, not real-time price. For a ticker that hasn't traded yet today, the price may be yesterday's close.
->
-> **Fix:** Use Polygon Trade endpoint (`/v3/last-trade/{ticker}`) for real-time price, or use the WebSocket `T.{ticker}` message `p` (price) field as the authoritative current price and use `getQuote` only for initial hydration.
+### [x] ~~Polygon getQuote — stale data~~
+**Fixed:** `getQuote` now calls `getLastTrade()` (`/v3/last-trade/{ticker}`) for real-time price and `getPreviousClose()` (`/v2/aggs/ticker/{ticker}/prev`) for accurate change calculation.
 
 ---
 
