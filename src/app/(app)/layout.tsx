@@ -2,6 +2,15 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Avatar } from "@/components/ui/Avatar";
+import {
+  LayoutDashboard,
+  TrendingUp,
+  Zap,
+  MessageCircle,
+  Briefcase,
+  Users,
+  Settings,
+} from "lucide-react";
 
 export default async function AppLayout({
   children,
@@ -40,20 +49,20 @@ export default async function AppLayout({
         {/* Nav */}
         <nav className="flex-1 py-6 px-3 space-y-1">
           {[
-            { href: "/dashboard", icon: "📊", label: "Dashboard" },
-            { href: "/feed", icon: "📈", label: "Feed" },
-            { href: "/signals", icon: "⚡", label: "Signals" },
-            { href: "/chat", icon: "💬", label: "Chat" },
-            { href: "/portfolio", icon: "💼", label: "Portfolio" },
-            { href: "/traders", icon: "👥", label: "Traders" },
-          ].map((item) => (
+            { href: "/dashboard", Icon: LayoutDashboard, label: "Dashboard" },
+            { href: "/feed", Icon: TrendingUp, label: "Feed" },
+            { href: "/signals", Icon: Zap, label: "Signals" },
+            { href: "/chat", Icon: MessageCircle, label: "Chat" },
+            { href: "/portfolio", Icon: Briefcase, label: "Portfolio" },
+            { href: "/traders", Icon: Users, label: "Traders" },
+          ].map(({ href, Icon, label }) => (
             <Link
-              key={item.href}
-              href={item.href}
+              key={href}
+              href={href}
               className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-elevated)] transition-colors"
             >
-              <span>{item.icon}</span>
-              <span className="text-sm font-medium">{item.label}</span>
+              <Icon size={18} />
+              <span className="text-sm font-medium">{label}</span>
             </Link>
           ))}
         </nav>
@@ -64,7 +73,7 @@ export default async function AppLayout({
             href="/settings"
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-elevated)] transition-colors mb-2"
           >
-            <span>⚙️</span>
+            <Settings size={18} />
             <span className="text-sm font-medium">Settings</span>
           </Link>
 

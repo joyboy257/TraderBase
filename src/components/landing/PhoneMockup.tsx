@@ -1,6 +1,15 @@
 "use client";
 
+import { Signal, Battery, BarChart3, TrendingUp, MessageCircle, User } from "lucide-react";
+
 export function PhoneMockup() {
+  const navIcons = [
+    { Icon: BarChart3, label: "Signals" },
+    { Icon: TrendingUp, label: "Feed" },
+    { Icon: MessageCircle, label: "Chat" },
+    { Icon: User, label: "Profile" },
+  ];
+
   return (
     <div className="relative">
       {/* Phone frame */}
@@ -21,10 +30,10 @@ export function PhoneMockup() {
         >
           {/* Status bar */}
           <div className="h-12 px-6 flex items-center justify-between text-xs text-[var(--color-text-muted)]">
-            <span>9:41</span>
-            <div className="flex items-center gap-1">
-              <span>📶</span>
-              <span>🔋</span>
+            <span className="font-data">9:41</span>
+            <div className="flex items-center gap-1.5">
+              <Signal size={12} />
+              <Battery size={12} />
             </div>
           </div>
 
@@ -117,14 +126,14 @@ export function PhoneMockup() {
 
           {/* Bottom nav */}
           <div className="absolute bottom-0 left-0 right-0 h-16 bg-[var(--color-bg-surface)] border-t border-[var(--color-border-subtle)] flex items-center justify-around px-6">
-            {["📊", "📈", "💬", "👤"].map((icon, i) => (
+            {navIcons.map(({ Icon, label }, i) => (
               <div
-                key={i}
-                className={`w-8 h-8 flex items-center justify-center text-base ${
+                key={label}
+                className={`w-8 h-8 flex items-center justify-center ${
                   i === 0 ? "text-[var(--color-accent-green)]" : "text-[var(--color-text-muted)]"
                 }`}
               >
-                {icon}
+                <Icon size={18} />
               </div>
             ))}
           </div>
