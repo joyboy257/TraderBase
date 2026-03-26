@@ -4,7 +4,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { formatPercent, formatCompactNumber } from "@/lib/utils";
-import { Users, TrendingUp, Zap, ExternalLink } from "lucide-react";
+import { Users, TrendingUp, Zap } from "lucide-react";
+import { FollowButton as FollowButtonGrid } from "@/components/social/FollowButtonGrid";
 
 export default async function TradersPage() {
   const supabase = await createClient();
@@ -165,18 +166,11 @@ export default async function TradersPage() {
                 </div>
               </div>
 
-              <div className="flex gap-2">
-                <Button
-                  variant={isFollowing ? "secondary" : "primary"}
-                  size="sm"
-                  className="flex-1"
-                >
-                  {isFollowing ? "Following" : "Follow"}
-                </Button>
-                <Button variant="ghost" size="sm" className="px-2">
-                  <ExternalLink size={14} />
-                </Button>
-              </div>
+              <FollowButtonGrid
+                  leaderId={trader.id}
+                  leaderUsername={trader.username}
+                  isFollowing={isFollowing}
+                />
             </Card>
           );
         })}

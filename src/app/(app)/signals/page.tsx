@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { formatPercent, timeAgo } from "@/lib/utils";
 import { Filter, ArrowUpDown } from "lucide-react";
+import { CopySignalButton } from "@/components/social/CopySignalButton";
 
 export default async function SignalsPage() {
   const supabase = await createClient();
@@ -44,7 +45,9 @@ export default async function SignalsPage() {
             {(signals ?? []).length} active signals · Real-time via verified brokerages
           </p>
         </div>
-        <Button size="sm">Create Signal</Button>
+        <Button size="sm" onClick={() => alert("Signal creation coming soon — enter your trade in your linked brokerage and it will appear here")}>
+          Create Signal
+        </Button>
       </div>
 
       {/* Filter Bar */}
@@ -179,13 +182,12 @@ export default async function SignalsPage() {
 
                 {/* Copy */}
                 <div className="col-span-2 flex justify-end">
-                  <Button
-                    size="sm"
-                    variant={isFollowed ? "primary" : "secondary"}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    {isFollowed ? "Copy" : "Follow to copy"}
-                  </Button>
+                  <CopySignalButton
+                    signalId={signal.id}
+                    ticker={signal.ticker}
+                    action={signal.action}
+                    followerId={userId}
+                  />
                 </div>
               </div>
             );

@@ -1,5 +1,7 @@
 import { PlaidApi, Configuration, Products, CountryCode } from "plaid";
 import axios from "axios";
+import { createHmac } from "crypto";
+import { decrypt } from "@/lib/crypto";
 
 function getBasePath(): string {
   switch (process.env.PLAID_ENV) {
@@ -43,15 +45,18 @@ export async function exchangePublicToken(publicToken: string) {
 }
 
 export async function getInvestmentHoldings(accessToken: string) {
+  // If the token appears to be encrypted (contains :), decrypt it
+  const token = accessToken.includes(":") ? decrypt(accessToken) : accessToken;
   const response = await plaidClient.investmentsHoldingsGet({
-    access_token: accessToken,
+    access_token: token,
   });
   return response.data;
 }
 
 export async function getAccounts(accessToken: string) {
+  const token = accessToken.includes(":") ? decrypt(accessToken) : accessToken;
   const response = await plaidClient.accountsGet({
-    access_token: accessToken,
+    access_token: token,
   });
   return response.data;
 }
@@ -76,6 +81,70 @@ export async function verifyPlaidWebhook(accessToken: string): Promise<boolean> 
     );
     return response.status === 200;
   } catch {
+    return false;
+  }
+}
+
+interface PlaidWebhookVerificationKey {
+  key: string;
+  key_id: string;
+}
+
+/**
+ * Fetch the public key used to verify Plaid webhook JWTs.
+ * Cached to avoid repeated fetches.
+ */
+let cachedVerificationKey: PlaidWebhookVerificationKey | null = null;
+
+export async function getPlaidWebhookVerificationKey(): Promise<PlaidWebhookVerificationKey> {
+  if (cachedVerificationKey) return cachedVerificationKey;
+
+  const basePath = getBasePath();
+  const response = await axios.post<PlaidWebhookVerificationKey>(
+    `${basePath}/webhook_verification_key/get`,
+    {},
+    {
+      headers: {
+        "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID ?? "",
+        "PLAID-SECRET": process.env.PLAID_SECRET ?? "",
+        "Content-Type": "application/json",
+      },
+    }
+  );
+  cachedVerificationKey = response.data;
+  return response.data;
+}
+
+/**
+ * Verify a Plaid webhook is authentic by validating the Plaid-Verification JWT.
+ * The JWT payload contains {PLAID-CLIENT-ID, PCA-REQUEST-ID, item_id, date}
+ * signed with the webhook verification key.
+ */
+export async function verifyWebhookToken(
+  payload: string,
+  verificationHeader: string,
+  itemId: string
+): Promise<boolean> {
+  try {
+    const { key, key_id } = await getPlaidWebhookVerificationKey();
+
+    // The verification header format is: key_id.signature (both base64url)
+    const lastDotIdx = verificationHeader.lastIndexOf(".");
+    if (lastDotIdx === -1) return false;
+    const providedKeyId = verificationHeader.slice(0, lastDotIdx);
+    const signature = verificationHeader.slice(lastDotIdx + 1);
+
+    if (!providedKeyId || !signature) return false;
+    if (providedKeyId !== key_id) return false;
+
+    // Verify HMAC
+    const expected = createHmac("sha256", Buffer.from(key, "base64"))
+      .update(payload)
+      .digest("base64");
+
+    return expected === signature;
+  } catch (err) {
+    console.error("[Webhook] Verification failed:", err);
     return false;
   }
 }

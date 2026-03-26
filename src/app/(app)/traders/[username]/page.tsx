@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { TrendingUp, Users, Target, BarChart2, ArrowLeft } from "lucide-react";
+import { FollowButton } from "@/components/social/FollowButton";
+import { CopySignalButton } from "@/components/social/CopySignalButton";
 import { formatPercent, formatCompactNumber, timeAgo } from "@/lib/utils";
 
 export default async function TraderProfilePage({
@@ -106,16 +108,19 @@ export default async function TraderProfilePage({
           </div>
 
           <div className="flex flex-col gap-2">
-            <Button
-              variant={follow ? "secondary" : "primary"}
-              className="w-full"
-            >
-              {follow ? "Following" : "Follow"}
-            </Button>
-            {!follow && (
-              <Button variant="secondary" className="w-full">
-                Copy Trade
-              </Button>
+            <FollowButton
+              leaderId={trader.id}
+              leaderUsername={trader.username}
+              isFollowing={!!follow}
+              followerId={user?.id ?? ""}
+            />
+            {!follow && signals && signals.length > 0 && (
+              <CopySignalButton
+                signalId={signals[0].id}
+                ticker={signals[0].ticker}
+                action={signals[0].action}
+                followerId={user?.id ?? ""}
+              />
             )}
           </div>
         </div>
@@ -199,7 +204,12 @@ export default async function TraderProfilePage({
                       {timeAgo(signal.created_at)}
                     </span>
                     {signal.is_verified && <Badge variant="verified">Verified</Badge>}
-                    <Button size="sm">Copy</Button>
+                    <CopySignalButton
+                      signalId={signal.id}
+                      ticker={signal.ticker}
+                      action={signal.action}
+                      followerId={user?.id ?? ""}
+                    />
                   </div>
                 </div>
                 {signal.rationale && (

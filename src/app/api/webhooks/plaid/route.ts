@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-import { verifyPlaidWebhook, getInvestmentHoldings, transformHoldingsToPositions } from "@/lib/plaid/client";
+import { getInvestmentHoldings, transformHoldingsToPositions, verifyWebhookToken, verifyPlaidWebhook } from "@/lib/plaid/client";
+import { decrypt } from "@/lib/crypto";
 
 function getServiceClient() {
   return createServerClient(
@@ -12,8 +13,10 @@ function getServiceClient() {
 
 export async function POST(request: NextRequest) {
   let body: Record<string, unknown>;
+  let rawBody: string;
   try {
-    body = await request.json();
+    rawBody = await request.text();
+    body = JSON.parse(rawBody);
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -21,10 +24,20 @@ export async function POST(request: NextRequest) {
   const webhookType = body.webhook_type as string | undefined;
   const webhookCode = body.webhook_code as string | undefined;
   const itemId = body.item_id as string | undefined;
+  const verificationHeader = request.headers.get("plaid-verification") ?? "";
 
   // Validate required fields
   if (!webhookType || !webhookCode || !itemId) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+  }
+
+  // Verify the webhook is from Plaid, not a spoofed request
+  if (verificationHeader) {
+    const isValid = await verifyWebhookToken(rawBody, verificationHeader, itemId);
+    if (!isValid) {
+      console.error("Webhook verification failed for item_id:", itemId);
+      return NextResponse.json({ error: "Invalid webhook" }, { status: 401 });
+    }
   }
 
   // Handle INVESTMENTS product webhooks (not TRANSACTIONS product)
@@ -57,7 +70,8 @@ async function handleSyncUpdatesAvailable(itemId: string): Promise<void> {
     return;
   }
 
-  const isValid = await verifyPlaidWebhook(connection.plaid_access_token_encrypted);
+  const rawToken = decrypt(connection.plaid_access_token_encrypted);
+  const isValid = await verifyPlaidWebhook(rawToken);
   if (!isValid) {
     console.error("Webhook verification failed for item_id:", itemId);
     return;
@@ -97,7 +111,8 @@ async function handleItemError(itemId: string): Promise<void> {
     return;
   }
 
-  const isValid = await verifyPlaidWebhook(connection.plaid_access_token_encrypted);
+  const rawToken = decrypt(connection.plaid_access_token_encrypted);
+  const isValid = await verifyPlaidWebhook(rawToken);
   if (!isValid) {
     console.error("Webhook verification failed for item_id:", itemId);
     return;

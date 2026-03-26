@@ -4,6 +4,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { MarketMovers } from "@/components/market/MarketMovers";
+import { CopySignalButton } from "@/components/social/CopySignalButton";
 import { formatCurrency, formatPercent, timeAgo } from "@/lib/utils";
 import Link from "next/link";
 import {
@@ -194,13 +195,12 @@ export default async function DashboardPage() {
                         </p>
                       </div>
 
-                      <Button
-                        size="sm"
-                        variant={signal.action === "BUY" ? "primary" : "secondary"}
-                        className="flex-shrink-0"
-                      >
-                        Copy
-                      </Button>
+                      <CopySignalButton
+                        signalId={signal.id}
+                        ticker={signal.ticker}
+                        action={signal.action}
+                        followerId={userId}
+                      />
                     </div>
                   </div>
                 </Card>

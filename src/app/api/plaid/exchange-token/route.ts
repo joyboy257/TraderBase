@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { exchangePublicToken, getInvestmentHoldings, getAccounts, transformHoldingsToPositions } from "@/lib/plaid/client";
+import { encrypt } from "@/lib/crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { AccountType } from "plaid";
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
       .from("brokerage_connections")
       .insert({
         user_id: user.id,
-        plaid_access_token_encrypted: access_token,
+        plaid_access_token_encrypted: encrypt(access_token),
         plaid_item_id: item_id,
         brokerage_name: brokerageName,
         account_id: accountId,
