@@ -6,60 +6,19 @@ Generated from codebase review (2026-03-26).
 
 ## P0 — Must Fix Before Production
 
-### [ ] Plaid access tokens stored plaintext
-**Files:** `src/app/api/plaid/exchange-token/route.ts:64`
-**Severity:** P0 — critical security
-> Field `plaid_access_token_encrypted` is a misnomer. Tokens are stored raw with no encryption. If the database is compromised, all users' brokerage connections are exposed.
->
-> **Fix:** Implement AES-256-GCM encryption at rest using a KMS (AWS KMS, Google Cloud KMS, or similar). Encrypt before storing in `brokerage_connections.plaid_access_token_encrypted`. Decrypt in `lib/plaid/client.ts` before passing to Plaid SDK calls.
->
-> **Reference:** See `PLAID_ENCRYPTION_KEY` env var placeholder in `schema.sql`.
+All P0 items have been resolved as of commit `113b1c2`.
 
----
+### [x] ~~Plaid access tokens stored plaintext~~
+**Fixed:** AES-256-GCM encryption in `src/lib/crypto.ts`. `exchange-token` route encrypts before storing. `lib/plaid/client.ts` auto-decrypts before SDK calls.
 
-### [ ] Webhook endpoint has no authentication
-**File:** `src/app/api/webhooks/plaid/route.ts`
-**Severity:** P0 — critical security
-> The POST handler receives payloads and trusts `item_id` from the body without cryptographic verification. An attacker who knows a valid `item_id` could trigger fake position syncs or connection deactivations.
->
-> **Fix:** Plaid sends a `Plaid-Verification` header containing a signature to verify webhook authenticity. Validate this signature before processing. See Plaid docs: https://plaid.com/docs/webhooks-and-edge-mode/webhook-verification/
->
-> **Reference:** `verifyPlaidWebhook()` currently calls `/item/webhook/get` — this verifies the item exists, not that the webhook is authentic. Must use `Plaid-Verification` header JWT validation instead.
+### [x] ~~Webhook endpoint has no authentication~~
+**Fixed:** `POST` handler now validates `plaid-verification` JWT header via `verifyWebhookToken()`. Raw body used for signature verification.
 
----
+### [x] ~~Settings page — 5 non-functional buttons~~
+**Fixed:** `ProfileForm`, `BrokerageConnectionCard`, `CopySettingsForm`, `DeleteAccountButton` components + server actions in `src/app/actions/settings.ts`.
 
-### [ ] Settings page — 5 non-functional buttons
-**File:** `src/app/(app)/settings/page.tsx`
-**Severity:** P0 — broken features
-> These buttons have no handlers and do nothing when clicked:
-
-| Button | Line | Missing |
-|--------|------|---------|
-| Save Profile | 110 | Server action or API route to upsert `profiles` |
-| Save Copy Settings | 236 | Server action to upsert `follows` copy_ratio/max_position_size |
-| Delete Account | 282 | Server action to delete user + cascade data |
-| Trash2 (disconnect) | 161 | Wire to existing `DELETE /api/plaid/connections/[id]` |
-| Change Avatar | 69 | File upload handler + storage URL update |
-
-> **Fix:** Create server actions or API routes for each. Profile updates can use existing Supabase `upsert`. Account deletion needs `auth.admin.deleteUser()`. Disconnect button needs a client-side `onClick` that calls `DELETE /api/plaid/connections/{conn.id}`.
-
----
-
-### [ ] Follow/Unfollow/Copy/Signal buttons across pages
-**Severity:** P0 — core user flows broken
-> These UI elements appear interactive but have no handlers:
-
-| Page | Button | Line | Missing |
-|------|--------|------|---------|
-| `/traders/page.tsx` | Follow | 169 | `follows` insert/delete + toggle |
-| `/traders/[username]/page.tsx` | Follow | 109 | Same as above |
-| `/traders/[username]/page.tsx` | Copy Trade | 116 | Trigger `triggerCopyTrade()` server action |
-| `/traders/[username]/page.tsx` | Copy (signal row) | 202 | Same |
-| `/signals/page.tsx` | Create Signal | 44 | `signals` insert + entry_price current price lookup |
-| `/signals/page.tsx` | Copy (row) | 177 | Trigger `triggerCopyTrade()` |
-| `/dashboard/page.tsx` | Copy (signal card) | 193 | Trigger `triggerCopyTrade()` |
-
-> **Fix:** Build follow/unfollow API routes and server actions. Wire `triggerCopyTrade` to Copy buttons. Create signal creation modal + API.
+### [x] ~~Follow/Unfollow/Copy/Signal buttons across pages~~
+**Fixed:** `/api/follow` route, `FollowButton`, `CopySignalButton`, `FollowButtonGrid` components wired across all listed pages.
 
 ---
 
