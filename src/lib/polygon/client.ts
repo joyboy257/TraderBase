@@ -90,6 +90,46 @@ export function connectPolygonWS(
 }
 
 /**
+ * Get the last trade price for a ticker via Polygon REST API.
+ * Uses the /v3/last-trade/{ticker} endpoint for real-time data.
+ */
+export async function getLastTrade(ticker: string): Promise<{ price: number; timestamp: string }> {
+  if (!POLYGON_API_KEY) {
+    throw new Error("POLYGON_API_KEY is not set");
+  }
+  const url = `https://api.polygon.io/v3/last-trade/${ticker}?apiKey=${POLYGON_API_KEY}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Polygon REST API error: ${res.status} ${res.statusText}`);
+  }
+  const data = await res.json();
+  if (!data.results) {
+    throw new Error(`No trade data for ticker ${ticker}`);
+  }
+  return { price: data.results.p, timestamp: data.results.t };
+}
+
+/**
+ * Get the previous day's close price for a ticker via Polygon REST API.
+ * Uses the /v2/aggs/ticker/{ticker}/prev endpoint.
+ */
+export async function getPreviousClose(ticker: string): Promise<{ close: number }> {
+  if (!POLYGON_API_KEY) {
+    throw new Error("POLYGON_API_KEY is not set");
+  }
+  const url = `https://api.polygon.io/v2/aggs/ticker/${ticker}/prev?adjusted=true&apiKey=${POLYGON_API_KEY}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Polygon REST API error: ${res.status} ${res.statusText}`);
+  }
+  const data = await res.json();
+  if (!data.results || data.results.length === 0) {
+    throw new Error(`No previous close data for ticker ${ticker}`);
+  }
+  return { close: data.results[0].c };
+}
+
+/**
  * Get the current quote for a ticker via Polygon REST API.
  * Fetches today's latest trade price and compares to previous close.
  */
@@ -98,29 +138,45 @@ export async function getQuote(ticker: string): Promise<PolygonQuote> {
     throw new Error("POLYGON_API_KEY is not set");
   }
 
-  // Get latest trade data (most recent bar, not just previous day)
-  const url = `https://api.polygon.io/v2/aggs/ticker/${ticker}/range/1/day/1/now?adjusted=true&apiKey=${POLYGON_API_KEY}`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Polygon REST API error: ${res.status} ${res.statusText}`);
+  try {
+    // Get real-time last trade price
+    const { price } = await getLastTrade(ticker);
+
+    // Get previous close for change calculation
+    let prevClose = 0;
+    try {
+      const { close } = await getPreviousClose(ticker);
+      prevClose = close;
+    } catch {
+      // If we can't get previous close, set change to 0
+      console.warn(`[getQuote] Could not get previous close for ${ticker}, setting change to 0`);
+    }
+
+    const change = prevClose > 0 ? parseFloat((price - prevClose).toFixed(4)) : 0;
+    const changePercent = prevClose > 0 ? parseFloat(((change / prevClose) * 100).toFixed(2)) : 0;
+
+    return { price, change, changePercent };
+  } catch (err) {
+    // Fallback to the original /range/1/day/1/now approach
+    console.warn(`[getQuote] getLastTrade failed, falling back to range/1/day/1/now: ${err}`);
+    const url = `https://api.polygon.io/v2/aggs/ticker/${ticker}/range/1/day/1/now?adjusted=true&apiKey=${POLYGON_API_KEY}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`Polygon REST API error: ${res.status} ${res.statusText}`);
+    }
+
+    const data = await res.json();
+    if (!data.results || data.results.length === 0) {
+      throw new Error(`No results for ticker ${ticker}`);
+    }
+
+    const result = data.results[data.results.length - 1];
+    const close = result.c;
+    const prevCloseFallback = result.o;
+
+    const change = parseFloat((close - prevCloseFallback).toFixed(4));
+    const changePercent = prevCloseFallback > 0 ? parseFloat(((change / prevCloseFallback) * 100).toFixed(2)) : 0;
+
+    return { price: close, change, changePercent };
   }
-
-  const data = await res.json();
-  if (!data.results || data.results.length === 0) {
-    throw new Error(`No results for ticker ${ticker}`);
-  }
-
-  const result = data.results[data.results.length - 1];
-  // result.c = close (today's close or latest close), result.o = open
-  // For today's bar, c is current/latest price
-  const close = result.c;
-  const open = result.o;
-  const prevClose = result.o; // Today's open = yesterday's close for intraday
-
-  // If we have today's open, use it as the previous close proxy
-  // This gives us today's change; for "prev" we'd need a separate call
-  const change = parseFloat((close - prevClose).toFixed(4));
-  const changePercent = prevClose > 0 ? parseFloat(((change / prevClose) * 100).toFixed(2)) : 0;
-
-  return { price: close, change, changePercent };
 }

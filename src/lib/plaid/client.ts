@@ -61,6 +61,47 @@ export async function getAccounts(accessToken: string) {
   return response.data;
 }
 
+export interface InvestmentOrder {
+  security_id: string;
+  quantity: number;
+  type: "market";
+  side: "BUY" | "SELL";
+}
+
+export interface InvestmentsOrdersPostResponse {
+  request_id: string;
+  order_id: string;
+}
+
+/**
+ * Place an investment order via Plaid's /investments/orders/post endpoint.
+ * The Plaid SDK does not expose this endpoint, so we call it directly via axios.
+ */
+export async function postInvestmentOrder(
+  accessToken: string,
+  accountId: string,
+  orders: InvestmentOrder[]
+): Promise<InvestmentsOrdersPostResponse> {
+  const token = accessToken.includes(":") ? decrypt(accessToken) : accessToken;
+  const basePath = getBasePath();
+  const response = await axios.post<InvestmentsOrdersPostResponse>(
+    `${basePath}/investments/orders/post`,
+    {
+      access_token: token,
+      account_id: accountId,
+      orders,
+    },
+    {
+      headers: {
+        "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID ?? "",
+        "PLAID-SECRET": process.env.PLAID_SECRET ?? "",
+        "Content-Type": "application/json",
+      },
+    }
+  );
+  return response.data;
+}
+
 /**
  * Verify a Plaid webhook is legitimate by calling /item/webhook/get.
  * The Plaid SDK does not expose this endpoint, so we call it directly.
