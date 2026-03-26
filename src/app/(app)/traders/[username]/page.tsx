@@ -4,7 +4,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Badge as UIBadge } from "@/components/ui/Badge";
+import { TrendingUp, Users, Target, BarChart2, ArrowLeft } from "lucide-react";
 import { formatPercent, formatCompactNumber, timeAgo } from "@/lib/utils";
 
 export default async function TraderProfilePage({
@@ -62,8 +62,9 @@ export default async function TraderProfilePage({
   return (
     <div className="p-8">
       {/* Back button */}
-      <a href="/traders" className="inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] mb-6">
-        ← Back to Traders
+      <a href="/traders" className="inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] mb-5 transition-colors">
+        <ArrowLeft size={14} />
+        Back to Traders
       </a>
 
       {/* Profile header */}
@@ -119,35 +120,39 @@ export default async function TraderProfilePage({
         {/* Stats row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-8 pt-8 border-t border-[var(--color-border-subtle)]">
           <div>
-            <span className="text-xs text-[var(--color-text-muted)] block mb-1">
-              30D Return
-            </span>
+            <div className="flex items-center gap-1.5 mb-1">
+              <TrendingUp size={12} className="text-[var(--color-text-muted)]" />
+              <span className="text-xs text-[var(--color-text-muted)]">30D Return</span>
+            </div>
             <span className="font-data text-2xl font-bold text-[var(--color-accent-green)]">
               {formatPercent(stats.return30d)}
             </span>
           </div>
           <div>
-            <span className="text-xs text-[var(--color-text-muted)] block mb-1">
-              All-Time Return
-            </span>
+            <div className="flex items-center gap-1.5 mb-1">
+              <BarChart2 size={12} className="text-[var(--color-text-muted)]" />
+              <span className="text-xs text-[var(--color-text-muted)]">All-Time Return</span>
+            </div>
             <span className="font-data text-2xl font-bold text-[var(--color-accent-green)]">
               {formatPercent(stats.returnAllTime)}
             </span>
           </div>
           <div>
-            <span className="text-xs text-[var(--color-text-muted)] block mb-1">
-              Win Rate
-            </span>
+            <div className="flex items-center gap-1.5 mb-1">
+              <Target size={12} className="text-[var(--color-text-muted)]" />
+              <span className="text-xs text-[var(--color-text-muted)]">Win Rate</span>
+            </div>
             <span className="font-data text-2xl font-bold text-[var(--color-text-primary)]">
               {stats.winRate}%
             </span>
           </div>
           <div>
-            <span className="text-xs text-[var(--color-text-muted)] block mb-1">
-              Total Trades
-            </span>
+            <div className="flex items-center gap-1.5 mb-1">
+              <Users size={12} className="text-[var(--color-text-muted)]" />
+              <span className="text-xs text-[var(--color-text-muted)]">Followers</span>
+            </div>
             <span className="font-data text-2xl font-bold text-[var(--color-text-primary)]">
-              {stats.totalTrades}
+              {formatCompactNumber(followerCount ?? 0)}
             </span>
           </div>
         </div>
@@ -164,9 +169,9 @@ export default async function TraderProfilePage({
               <Card key={signal.id} className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <UIBadge variant={signal.action === "BUY" ? "buy" : "sell"}>
+                    <Badge variant={signal.action === "BUY" ? "buy" : "sell"}>
                       {signal.action}
-                    </UIBadge>
+                    </Badge>
                     <span className="font-data font-bold text-lg text-[var(--color-text-primary)]">
                       {signal.ticker}
                     </span>
