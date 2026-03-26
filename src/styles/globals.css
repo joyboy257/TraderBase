@@ -54,6 +54,26 @@
 
   html {
     scroll-behavior: smooth;
+    color-scheme: dark;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+    .animate-marquee {
+      animation: none;
+    }
+    .animate-float {
+      animation: none;
+    }
+    .animate-pulse-glow {
+      animation: none;
+    }
   }
 
   body {
