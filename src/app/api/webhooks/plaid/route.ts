@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-import { getInvestmentHoldings, transformHoldingsToPositions, verifyWebhookToken, verifyPlaidWebhook } from "@/lib/plaid/client";
-import { decrypt } from "@/lib/crypto";
+import { verifyWebhookToken } from "@/lib/plaid/client";
+import { handleSyncUpdatesAvailable, handleItemError } from "@/lib/webhook/handlers/plaid";
 
 function getServiceClient() {
   return createServerClient(
@@ -9,6 +9,17 @@ function getServiceClient() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { persistSession: false } }
   );
+}
+
+function deriveEventId(body: Record<string, unknown>): string {
+  const notificationId = body.notification_id as string | undefined;
+  if (notificationId) return notificationId;
+  const itemId = (body.item_id as string) ?? "";
+  const webhookType = (body.webhook_type as string) ?? "";
+  const webhookCode = (body.webhook_code as string) ?? "";
+  const ts =
+    ((body.created_at ?? body.timestamp) as string) ?? new Date().toISOString();
+  return `${itemId}::${webhookType}::${webhookCode}::${ts}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -40,9 +51,34 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Handle INVESTMENTS product webhooks (not TRANSACTIONS product)
+  // Insert-first pattern: queue the event before processing
+  const serviceClient = getServiceClient();
+  const eventId = deriveEventId(body);
+  const { error: insertError } = await serviceClient
+    .from("webhook_events")
+    .insert({
+      source: "plaid",
+      event_id: eventId,
+      webhook_type: webhookType,
+      webhook_code: webhookCode,
+      item_id: itemId,
+      raw_payload: body,
+      status: "pending",
+      attempts: 0,
+      max_attempts: 3,
+      next_retry_at: new Date().toISOString(),
+    });
+
+  if (insertError) {
+    if (insertError.code === "23505") {
+      return NextResponse.json({ received: true }); // duplicate, already have it
+    }
+    console.error("Failed to queue webhook event:", insertError);
+    return NextResponse.json({ error: "Queue unavailable" }, { status: 503 });
+  }
+
+  // Dispatch handlers asynchronously after queue insert
   if (webhookType === "INVESTMENTS" && webhookCode === "SYNC_UPDATES_AVAILABLE") {
-    // Fire-and-forget is intentional — Plaid requires 200 fast, positions sync async
     handleSyncUpdatesAvailable(itemId).catch((err) =>
       console.error(`Webhook SYNC_UPDATES_AVAILABLE failed for item ${itemId}:`, err)
     );
@@ -53,82 +89,4 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ received: true });
-}
-
-async function handleSyncUpdatesAvailable(itemId: string): Promise<void> {
-  const serviceClient = getServiceClient();
-
-  const { data: connection, error } = await serviceClient
-    .from("brokerage_connections")
-    .select("id, user_id, plaid_access_token_encrypted")
-    .eq("plaid_item_id", itemId)
-    .eq("is_active", true)
-    .single();
-
-  if (error || !connection) {
-    console.error("Connection not found for item_id:", itemId);
-    return;
-  }
-
-  const rawToken = decrypt(connection.plaid_access_token_encrypted);
-  const isValid = await verifyPlaidWebhook(rawToken);
-  if (!isValid) {
-    console.error("Webhook verification failed for item_id:", itemId);
-    return;
-  }
-
-  const { accounts, holdings, securities } = await getInvestmentHoldings(
-    connection.plaid_access_token_encrypted
-  );
-
-  const positions = transformHoldingsToPositions(
-    accounts,
-    holdings,
-    securities,
-    connection.user_id,
-    connection.id
-  );
-
-  if (positions.length > 0) {
-    await serviceClient.from("positions").upsert(positions, {
-      onConflict: "user_id,brokerage_connection_id,ticker",
-    });
-  }
-}
-
-async function handleItemError(itemId: string): Promise<void> {
-  const serviceClient = getServiceClient();
-
-  const { data: connection } = await serviceClient
-    .from("brokerage_connections")
-    .select("plaid_access_token_encrypted")
-    .eq("plaid_item_id", itemId)
-    .eq("is_active", true)
-    .single();
-
-  if (!connection?.plaid_access_token_encrypted) {
-    console.error("Connection not found for item_id:", itemId);
-    return;
-  }
-
-  const rawToken = decrypt(connection.plaid_access_token_encrypted);
-  const isValid = await verifyPlaidWebhook(rawToken);
-  if (!isValid) {
-    console.error("Webhook verification failed for item_id:", itemId);
-    return;
-  }
-
-  const { error } = await serviceClient
-    .from("brokerage_connections")
-    .update({ is_active: false })
-    .eq("plaid_item_id", itemId)
-    .eq("is_active", true);
-
-  if (error) {
-    console.error("Failed to deactivate connection for item_id:", itemId, error);
-    return;
-  }
-
-  console.warn("Brokerage connection deactivated due to ITEM_ERROR:", itemId);
-  // TODO: Notify user via email or in-app notification
 }

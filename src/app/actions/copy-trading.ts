@@ -1,7 +1,7 @@
 'use server';
 
 import { createClient } from "@/lib/supabase/server";
-import { executeCopyTrade, processAllFollowers } from "@/lib/copy-trading/executor";
+import { executeCopyTrade, processAllFollowers, retryCopyTrade } from "@/lib/copy-trading/executor";
 import { CopyExecutionResult } from "@/types/copy-trading";
 
 /**
@@ -89,6 +89,44 @@ export async function triggerCopyTradingForSignal(signalId: string): Promise<{ s
 
   } catch (error) {
     console.error("[Copy Trading Action] triggerCopyTradingForSignal error:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Server action wrapper for retryCopyTrade with auth check.
+ * Allows users to retry a previously failed copy trade.
+ */
+export async function retryCopyTradeAction(copiedTradeId: string): Promise<CopyExecutionResult> {
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    // Fetch the copied_trade to verify ownership
+    const { data: copiedTrade } = await supabase
+      .from("copied_trades")
+      .select("user_id")
+      .eq("id", copiedTradeId)
+      .single();
+
+    if (!copiedTrade) {
+      return { success: false, error: "Copied trade not found" };
+    }
+
+    // Only the owner can retry their own copy trade
+    if (user.id !== copiedTrade.user_id) {
+      return { success: false, error: "Forbidden: Cannot retry another user's copy trade" };
+    }
+
+    return await retryCopyTrade(copiedTradeId);
+
+  } catch (error) {
+    console.error("[Copy Trading Action] retryCopyTradeAction error:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
     return { success: false, error: message };
   }

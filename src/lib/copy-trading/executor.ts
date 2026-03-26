@@ -11,6 +11,8 @@ interface Signal {
   ticker: string;
   action: 'BUY' | 'SELL';
   entry_price: number;
+  stop_loss?: number | null;
+  take_profit?: number | null;
   is_active: boolean;
 }
 
@@ -41,24 +43,40 @@ function getServiceClient() {
 }
 
 /**
+ * Derive the 3-part idempotency key for a copy trade.
+ * Format: signal_id:follower_id:brokerage_connection_id
+ */
+function deriveIdempotencyKey(
+  signalId: string,
+  followerId: string,
+  brokerageConnectionId: string
+): string {
+  return `${signalId}:${followerId}:${brokerageConnectionId}`;
+}
+
+/**
  * Execute a copy trade for a single follower based on a signal.
  *
+ * Uses INSERT ... ON CONFLICT DO NOTHING RETURNING for atomic idempotency:
+ * - Winner (row returned): calls Plaid, then UPDATEs the row with result
+ * - Loser (no row returned): fetches existing row, returns as success without calling Plaid
+ *
  * Steps:
- * 1. Get the signal from database (user_id, ticker, action, entry_price)
- * 2. Idempotency check: skip if (signal_id, user_id) already processed with status != 'failed'
- * 3. Get the follow relationship (copy_ratio, max_position_size, brokerage_connection_id)
+ * 1. Rate limit check
+ * 2. Get the signal from database
+ * 3. Get the follow relationship (copy_ratio, max_position_size)
  * 4. Get the brokerage connection (plaid_access_token_encrypted)
- * 5. Calculate quantity: qty = (copy_ratio * max_position_size) / entry_price
- * 6. Execute order via Plaid (MVP: record as pending, actual execution requires securities master)
- * 7. Record copied_trade in database
- * 8. Return result
+ * 5. Derive idempotency key (signal_id:follower_id:brokerage_connection_id)
+ * 6. Atomic INSERT ... ON CONFLICT DO NOTHING RETURNING
+ * 7. Winner: validate, call Plaid, UPDATE row with result
+ * 8. Loser: fetch existing row, return success (skip Plaid)
  *
  * Edge cases:
  * - If copy_ratio is 0 or is_active is false: skip silently
  * - If no brokerage connected: return { success: false, error: 'No brokerage' }
  * - If qty <= 0: skip
  * - If Plaid API fails: record as 'failed' with error_message, return { success: false, error }
- * - Idempotency: if (signal_id, user_id) already exists with status != 'failed', return early
+ * - Concurrent calls: only one calls Plaid (winner), loser returns existing row
  */
 export async function executeCopyTrade(followerId: string, signalId: string): Promise<CopyExecutionResult> {
   try {
@@ -85,20 +103,7 @@ export async function executeCopyTrade(followerId: string, signalId: string): Pr
 
     const typedSignal = signal as Signal;
 
-    // Step 2: Idempotency check - skip if already processed for this (signal_id, user_id)
-    const { data: existingCopy } = await serviceClient
-      .from("copied_trades")
-      .select("id, status")
-      .eq("signal_id", signalId)
-      .eq("user_id", followerId)
-      .single();
-
-    if (existingCopy && existingCopy.status !== "failed") {
-      // Already processed (pending or executed), return early to avoid duplicate
-      return { success: true, copied_trade_id: existingCopy.id };
-    }
-
-    // Step 3: Get the follow relationship
+    // Step 2: Get the follow relationship
     const { data: follow, error: followError } = await serviceClient
       .from("follows")
       .select("*")
@@ -114,13 +119,11 @@ export async function executeCopyTrade(followerId: string, signalId: string): Pr
     const typedFollow = follow as Follow;
 
     // Skip if copy_ratio is 0
-    // NOTE: when called via processAllFollowers this is never true (query filters copy_ratio > 0),
-    // but this guard protects direct executeCopyTrade calls
     if (typedFollow.copy_ratio <= 0) {
       return { success: false, error: "Copy ratio is 0" };
     }
 
-    // Step 4: Get the brokerage connection
+    // Step 3: Get the brokerage connection (MUST be before idempotency check for key derivation)
     const { data: brokerage, error: brokerageError } = await serviceClient
       .from("brokerage_connections")
       .select("*")
@@ -134,29 +137,69 @@ export async function executeCopyTrade(followerId: string, signalId: string): Pr
 
     const typedBrokerage = brokerage as BrokerageConnection;
 
-    // Step 5: Calculate quantity
-    // qty = (copy_ratio * max_position_size) / entry_price
+    // Step 4: Calculate quantity
     const entryPrice = Number(typedSignal.entry_price);
     if (entryPrice <= 0) {
       return { success: false, error: "Invalid entry price" };
     }
 
     const quantity = (typedFollow.copy_ratio * typedFollow.max_position_size) / entryPrice;
-
-    // Skip if qty <= 0
     if (quantity <= 0) {
       return { success: false, error: "Calculated quantity is 0 or negative" };
     }
 
-    // Round to 4 decimal places for stock quantities
     const roundedQuantity = Math.round(quantity * 10000) / 10000;
 
-    // Step 6: Decrypt access token and execute order via Plaid
+    // Step 5: Derive idempotency key BEFORE the atomic insert
+    const idempotencyKey = deriveIdempotencyKey(signalId, followerId, typedBrokerage.id);
+
+    // Step 6: Atomic INSERT ... ON CONFLICT DO NOTHING RETURNING
+    // Winner: gets a row back, proceeds to call Plaid
+    // Loser: gets null, should not call Plaid
+    const { data: insertResult, error: insertError } = await serviceClient
+      .from("copied_trades")
+      .insert({
+        idempotency_key: idempotencyKey,
+        user_id: followerId,
+        signal_id: signalId,
+        brokerage_connection_id: typedBrokerage.id,
+        ticker: typedSignal.ticker,
+        action: typedSignal.action,
+        quantity: roundedQuantity,
+        price: entryPrice,
+        executed_at: new Date().toISOString(),
+        status: "pending",
+      })
+      .onConflict("idempotency_key")
+      .doNothing()
+      .select("id, status")
+      .single();
+
+    // Loser path: no row returned from RETURNING, another request won the race
+    if (!insertResult) {
+      const { data: existingRow } = await serviceClient
+        .from("copied_trades")
+        .select("id, status")
+        .eq("idempotency_key", idempotencyKey)
+        .single();
+
+      if (existingRow) {
+        // Treat pending as "in flight" success
+        return { success: true, copied_trade_id: existingRow.id };
+      }
+      // Edge case: row somehow gone, but we didn't insert - treat as conflict and fail
+      return { success: false, error: "Concurrent execution conflict" };
+    }
+
+    // Winner path: we got a row back, proceed to call Plaid
+    const tradeRowId = insertResult.id;
+
+    // Step 7: Winner calls Plaid - first validate holdings for SELL
     const accessToken = typedBrokerage.plaid_access_token_encrypted.includes(":")
       ? decrypt(typedBrokerage.plaid_access_token_encrypted)
       : typedBrokerage.plaid_access_token_encrypted;
 
-    // Look up investment holdings to get security_id for the signal's ticker
+    // Look up investment holdings
     const holdingsData = await getInvestmentHoldings(accessToken);
     const { holdings, securities } = holdingsData;
 
@@ -169,33 +212,18 @@ export async function executeCopyTrade(followerId: string, signalId: string): Pr
       const holding = holdings.find((h) => h.security_id === security?.security_id);
       if (!holding || holding.quantity <= 0) {
         // No position to sell — record as failed and return
-        const copiedTrade: Omit<CopiedTrade, "id"> = {
-          user_id: followerId,
-          signal_id: signalId,
-          brokerage_connection_id: typedBrokerage.id,
-          ticker: typedSignal.ticker,
-          action: typedSignal.action,
-          quantity: roundedQuantity,
-          price: entryPrice,
-          executed_at: new Date().toISOString(),
-          status: "failed",
-          error_message: `No position found for ${typedSignal.ticker}`,
-        };
-
-        const { data: insertedTrade, error: insertError } = await serviceClient
+        await serviceClient
           .from("copied_trades")
-          .insert(copiedTrade)
-          .select("id")
-          .single();
-
-        if (insertError) {
-          console.error("[Copy Trading] Failed to insert copied_trade:", insertError);
-          return { success: false, error: "Failed to record copied trade" };
-        }
+          .update({
+            status: "failed",
+            error_message: `No position found for ${typedSignal.ticker}`,
+            executed_at: new Date().toISOString(),
+          })
+          .eq("id", tradeRowId);
 
         return {
           success: false,
-          copied_trade_id: insertedTrade.id,
+          copied_trade_id: tradeRowId,
           error: `No position found for ${typedSignal.ticker}`,
         };
       }
@@ -204,31 +232,16 @@ export async function executeCopyTrade(followerId: string, signalId: string): Pr
 
     if (!security) {
       const errorMsg = `Security ${typedSignal.ticker} not found in holdings`;
-      const copiedTrade: Omit<CopiedTrade, "id"> = {
-        user_id: followerId,
-        signal_id: signalId,
-        brokerage_connection_id: typedBrokerage.id,
-        ticker: typedSignal.ticker,
-        action: typedSignal.action,
-        quantity: orderQuantity,
-        price: entryPrice,
-        executed_at: new Date().toISOString(),
-        status: "failed",
-        error_message: errorMsg,
-      };
-
-      const { data: insertedTrade, error: insertError } = await serviceClient
+      await serviceClient
         .from("copied_trades")
-        .insert(copiedTrade)
-        .select("id")
-        .single();
+        .update({
+          status: "failed",
+          error_message: errorMsg,
+          executed_at: new Date().toISOString(),
+        })
+        .eq("id", tradeRowId);
 
-      if (insertError) {
-        console.error("[Copy Trading] Failed to insert copied_trade:", insertError);
-        return { success: false, error: "Failed to record copied trade" };
-      }
-
-      return { success: false, copied_trade_id: insertedTrade.id, error: errorMsg };
+      return { success: false, copied_trade_id: tradeRowId, error: errorMsg };
     }
 
     // Place the order via Plaid
@@ -250,41 +263,89 @@ export async function executeCopyTrade(followerId: string, signalId: string): Pr
       console.error(`[Copy Trading] Plaid order failed:`, orderErrorMessage);
     }
 
-    // Step 7: Record copied_trade in database with result status
-    const copiedTrade: Omit<CopiedTrade, "id"> = {
-      user_id: followerId,
-      signal_id: signalId,
-      brokerage_connection_id: typedBrokerage.id,
-      ticker: typedSignal.ticker,
-      action: typedSignal.action,
-      quantity: orderQuantity,
-      price: entryPrice,
-      executed_at: new Date().toISOString(),
-      status: orderSuccess ? "executed" : "failed",
-      error_message: orderErrorMessage,
-    };
-
-    const { data: insertedTrade, error: insertError } = await serviceClient
+    // Step 8: UPDATE the row with Plaid result
+    const { data: updatedTrade } = await serviceClient
       .from("copied_trades")
-      .insert(copiedTrade)
+      .update({
+        status: orderSuccess ? "executed" : "failed",
+        error_message: orderErrorMessage,
+        executed_at: new Date().toISOString(),
+      })
+      .eq("id", tradeRowId)
       .select("id")
       .single();
 
-    if (insertError) {
-      console.error("[Copy Trading] Failed to insert copied_trade:", insertError);
-      return { success: false, error: "Failed to record copied trade" };
+    // Insert sltp_monitors row if the signal has stop_loss or take_profit
+    if (orderSuccess && updatedTrade && (typedSignal.stop_loss != null || typedSignal.take_profit != null)) {
+      await serviceClient.from("sltp_monitors").insert({
+        user_id: followerId,
+        position_id: null, // linked when positions webhook fires
+        copied_trade_id: updatedTrade.id,
+        signal_id: signalId,
+        brokerage_connection_id: typedBrokerage.id,
+        ticker: typedSignal.ticker,
+        action: typedSignal.action,
+        stop_loss: typedSignal.stop_loss ?? null,
+        take_profit: typedSignal.take_profit ?? null,
+        entry_price: entryPrice,
+        status: "active",
+      });
     }
 
-    // Step 8: Return result
+    // Step 9: Return result
     return orderSuccess
-      ? { success: true, copied_trade_id: insertedTrade.id }
-      : { success: false, copied_trade_id: insertedTrade.id, error: orderErrorMessage };
+      ? { success: true, copied_trade_id: updatedTrade?.id ?? tradeRowId }
+      : { success: false, copied_trade_id: tradeRowId, error: orderErrorMessage };
 
   } catch (error) {
     console.error("[Copy Trading] executeCopyTrade error:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
     return { success: false, error: message };
   }
+}
+
+/**
+ * Retry a failed copy trade by deleting the failed row and re-executing.
+ *
+ * This allows users to retry a trade that previously failed due to a transient
+ * error (e.g., network timeout, Plaid API error).
+ *
+ * @param copiedTradeId - The ID of the failed copied_trades row
+ * @param options - Optional parameters
+ * @param options.forcePending - If true, retry even if the trade is still 'pending'
+ */
+export async function retryCopyTrade(
+  copiedTradeId: string,
+  options?: { forcePending?: boolean }
+): Promise<CopyExecutionResult> {
+  const serviceClient = getServiceClient();
+
+  const { data: failedTrade, error: fetchError } = await serviceClient
+    .from("copied_trades")
+    .select("*")
+    .eq("id", copiedTradeId)
+    .single();
+
+  if (fetchError || !failedTrade) {
+    return { success: false, error: "Failed trade not found" };
+  }
+
+  if (failedTrade.status === "pending" && !options?.forcePending) {
+    return { success: false, error: "Trade is pending. Use forcePending to override." };
+  }
+
+  // Delete the failed/pending row so a new one can be created
+  const { error: deleteError } = await serviceClient
+    .from("copied_trades")
+    .delete()
+    .eq("id", copiedTradeId);
+
+  if (deleteError) {
+    return { success: false, error: "Failed to delete failed trade row" };
+  }
+
+  // Re-execute the copy trade
+  return executeCopyTrade(failedTrade.user_id, failedTrade.signal_id);
 }
 
 /**

@@ -7,12 +7,13 @@ import { Loader2, Plus } from "lucide-react";
 
 interface BrokerageConnectorProps {
   onConnected?: () => void;
+  onExit?: () => void;
   /** Skip window.location.reload() after successful connection.
    *  Use when the caller (e.g. OnboardingWizard) manages post-connection state. */
   skipReload?: boolean;
 }
 
-export function BrokerageConnector({ onConnected, skipReload }: BrokerageConnectorProps) {
+export function BrokerageConnector({ onConnected, onExit, skipReload }: BrokerageConnectorProps) {
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +44,7 @@ export function BrokerageConnector({ onConnected, skipReload }: BrokerageConnect
     },
     onExit: () => {
       setIsLoading(false);
+      onExit?.();
     },
   });
 

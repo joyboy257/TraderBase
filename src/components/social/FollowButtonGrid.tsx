@@ -10,13 +10,19 @@ interface FollowButtonGridProps {
   leaderId: string;
   leaderUsername: string;
   isFollowing: boolean;
+  followerId: string;
 }
 
-export function FollowButton({ leaderId, leaderUsername, isFollowing: initialIsFollowing }: FollowButtonGridProps) {
+export function FollowButton({ leaderId, leaderUsername, isFollowing: initialIsFollowing, followerId }: FollowButtonGridProps) {
   const [isPending, startTransition] = useTransition();
   const [isFollowing, setIsFollowing] = useState(initialIsFollowing);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleFollow() {
+    if (!followerId) {
+      setError("Sign in to follow");
+      return;
+    }
     startTransition(async () => {
       const method = isFollowing ? "DELETE" : "POST";
       const res = await fetch("/api/follow", {
@@ -48,5 +54,6 @@ export function FollowButton({ leaderId, leaderUsername, isFollowing: initialIsF
         </Button>
       </Link>
     </div>
+    {error && <span className="text-xs text-[var(--color-sell)]">{error}</span>}
   );
 }

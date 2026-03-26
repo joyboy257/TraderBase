@@ -63,20 +63,24 @@ export function OnboardingWizard({ profile }: OnboardingWizardProps) {
 
   function handleBrokerageComplete() {
     if (onboardingPath === "trader") {
-      // Trader path: brokerage step is final (signal creation is optional)
-      // finishOnboarding('trader') is called inside ConnectBrokerageStep
+      // Trader path: advance to optional signal creation
+      setCurrentStep("create_signal");
     } else {
-      // Copier path: after brokerage, done
+      // Copier path: dismiss wizard (full page reload to pick up onboarding_complete)
+      window.location.reload();
     }
   }
 
   function handleCreateSignalComplete() {
-    // finishOnboarding('copier') is called inside CreateSignalStep
+    // Trader signal creation is optional — wizard was already completed in
+    // ConnectBrokerageStep via finishOnboarding('trader'). This handler just
+    // dismisses the wizard after an optional signal is created.
+    window.location.reload();
   }
 
   function handleSkip() {
-    // User skipped — dismiss wizard without setting path
-    // The banner will guide them later
+    // Dismiss wizard and reload — server will re-evaluate onboarding state
+    window.location.reload();
   }
 
   return createPortal(

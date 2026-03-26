@@ -146,6 +146,7 @@ export default async function TradersPage() {
                   leaderId={trader.id}
                   leaderUsername={trader.username}
                   isFollowing={isFollowing}
+                  followerId={userId}
                 />
             </Card>
           );

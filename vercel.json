@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/sltp-monitor",
+      "schedule": "*/30 * * * *"
+    }
+  ]
+}

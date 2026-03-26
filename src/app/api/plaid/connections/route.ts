@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { getInvestmentHoldings, transformHoldingsToPositions } from "@/lib/plaid/client";
 import { createServerClient } from "@supabase/ssr";
+import { upsertSecurityIdsFromHoldings } from "@/lib/plaid/security-cache";
 
 function getServiceClient() {
   return createServerClient(
@@ -77,6 +78,9 @@ export async function POST() {
             onConflict: "user_id,brokerage_connection_id,ticker",
           });
         }
+
+        // Populate security_id_cache for all securities in this connection
+        await upsertSecurityIdsFromHoldings(conn.id, securities);
 
         return { conn, positions };
       })

@@ -1,12 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
-import { Avatar } from "@/components/ui/Avatar";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
-import { formatPercent, timeAgo } from "@/lib/utils";
-import { Filter, ArrowUpDown } from "lucide-react";
-import { CopySignalButton } from "@/components/social/CopySignalButton";
+import { SignalsTable } from "@/components/feed/SignalsTable";
 
 export default async function SignalsPage() {
   const supabase = await createClient();
@@ -79,121 +74,11 @@ export default async function SignalsPage() {
       </div>
 
       {/* Table */}
-      <Card className="overflow-hidden">
-        {/* Table header */}
-        <div className="grid grid-cols-12 gap-4 px-5 py-3 border-b border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)]">
-          {[
-            { label: "Trader", col: "col-span-3" },
-            { label: "Ticker", col: "col-span-1" },
-            { label: "Action", col: "col-span-1" },
-            { label: "Entry", col: "col-span-1" },
-            { label: "Current", col: "col-span-1" },
-            { label: "Return", col: "col-span-1" },
-            { label: "Stop Loss", col: "col-span-1" },
-            { label: "Time", col: "col-span-1" },
-            { label: "", col: "col-span-2" },
-          ].map(({ label, col }) => (
-            <div key={label} className={`${col} text-[10px] font-semibold uppercase tracking-widest text-[var(--color-text-muted)]`}>
-              {label}
-            </div>
-          ))}
-        </div>
-
-        {/* Rows */}
-        <div className="divide-y divide-[var(--color-border-subtle)]">
-          {(signals ?? []).map((signal) => {
-            const profile = signal.profiles;
-            const entryPrice = Number(signal.entry_price || 0);
-            const currentPrice = Number(signal.current_price || entryPrice);
-            const returnPct = entryPrice > 0
-              ? (signal.action === "BUY"
-                ? ((currentPrice - entryPrice) / entryPrice) * 100
-                : ((entryPrice - currentPrice) / entryPrice) * 100)
-              : 0;
-            const isFollowed = followedIds.has(signal.user_id);
-
-            return (
-              <div
-                key={signal.id}
-                className="grid grid-cols-12 gap-4 px-5 py-3.5 items-center hover:bg-[var(--color-bg-elevated)] transition-colors group"
-              >
-                {/* Trader */}
-                <div className="col-span-3 flex items-center gap-2.5">
-                  <Avatar src={profile?.avatar_url} alt={profile?.display_name ?? profile?.username} size="sm" />
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-medium text-[var(--color-text-primary)] truncate">
-                        {profile?.display_name ?? profile?.username}
-                      </span>
-                      {profile?.is_verified && <Badge variant="verified">V</Badge>}
-                    </div>
-                    <span className="text-xs text-[var(--color-text-muted)]">@{profile?.username}</span>
-                  </div>
-                </div>
-
-                {/* Ticker */}
-                <div className="col-span-1">
-                  <span className="font-data font-bold text-sm text-[var(--color-text-primary)]">
-                    {signal.ticker}
-                  </span>
-                </div>
-
-                {/* Action */}
-                <div className="col-span-1">
-                  <Badge variant={signal.action === "BUY" ? "buy" : "sell"}>
-                    {signal.action}
-                  </Badge>
-                </div>
-
-                {/* Entry */}
-                <div className="col-span-1">
-                  <span className="font-data text-sm text-[var(--color-text-secondary)]">
-                    ${entryPrice.toFixed(2)}
-                  </span>
-                </div>
-
-                {/* Current */}
-                <div className="col-span-1">
-                  <span className="font-data text-sm text-[var(--color-text-primary)]">
-                    ${currentPrice.toFixed(2)}
-                  </span>
-                </div>
-
-                {/* Return */}
-                <div className="col-span-1">
-                  <span className={`font-data font-semibold text-sm ${returnPct >= 0 ? "text-[var(--color-accent-green)]" : "text-[var(--color-sell)]"}`}>
-                    {returnPct >= 0 ? "+" : ""}{returnPct.toFixed(2)}%
-                  </span>
-                </div>
-
-                {/* Stop Loss */}
-                <div className="col-span-1">
-                  <span className="font-data text-xs text-[var(--color-text-muted)]">
-                    {signal.stop_loss ? `$${Number(signal.stop_loss).toFixed(2)}` : "—"}
-                  </span>
-                </div>
-
-                {/* Time */}
-                <div className="col-span-1">
-                  <span className="text-xs text-[var(--color-text-muted)]">
-                    {timeAgo(signal.created_at)}
-                  </span>
-                </div>
-
-                {/* Copy */}
-                <div className="col-span-2 flex justify-end">
-                  <CopySignalButton
-                    signalId={signal.id}
-                    ticker={signal.ticker}
-                    action={signal.action}
-                    followerId={userId}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </Card>
+      <SignalsTable
+        initialSignals={signals ?? []}
+        followedIds={followedIds}
+        userId={userId}
+      />
     </div>
   );
 }

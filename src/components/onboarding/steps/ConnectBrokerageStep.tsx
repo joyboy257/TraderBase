@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { BrokerageConnector } from "@/components/plaid/BrokerageConnector";
 import { Button } from "@/components/ui/Button";
 import { completeOnboardingStep, finishOnboarding } from "@/app/actions/onboarding";
@@ -14,13 +14,20 @@ interface ConnectBrokerageStepProps {
 
 export function ConnectBrokerageStep({ path, onComplete, onSkip }: ConnectBrokerageStepProps) {
   const [isPending, startTransition] = useTransition();
+  const [stepError, setStepError] = useState<string | null>(null);
 
   async function handleConnected() {
     startTransition(async () => {
-      // Step must advance before finishOnboarding so the step is recorded
-      await completeOnboardingStep(2);
-      // Trader onboarding is complete at brokerage link
-      await finishOnboarding(path);
+      const stepResult = await completeOnboardingStep(2);
+      if (!stepResult.success) {
+        setStepError("Failed to save step progress. Please try again.");
+        return;
+      }
+      const finishResult = await finishOnboarding(path);
+      if (!finishResult.success) {
+        setStepError(finishResult.error ?? "Failed to complete onboarding. Please try again.");
+        return;
+      }
       onComplete();
     });
   }
@@ -46,8 +53,12 @@ export function ConnectBrokerageStep({ path, onComplete, onSkip }: ConnectBroker
         </div>
         <BrokerageConnector
           onConnected={handleConnected}
+          onExit={onSkip}
           skipReload={true}
         />
+        {stepError && (
+          <p className="text-sm text-[var(--color-sell)] text-center">{stepError}</p>
+        )}
       </div>
 
       <Button type="button" variant="ghost" size="sm" onClick={onSkip} className="w-full">

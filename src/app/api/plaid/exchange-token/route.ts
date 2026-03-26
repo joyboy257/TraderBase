@@ -4,6 +4,7 @@ import { encrypt } from "@/lib/crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { AccountType } from "plaid";
+import { upsertSecurityIdsFromHoldings } from "@/lib/plaid/security-cache";
 
 // Service role client for writing to protected tables
 function getServiceClient() {
@@ -96,6 +97,9 @@ export async function POST(request: NextRequest) {
           onConflict: "user_id,brokerage_connection_id,ticker",
         });
       }
+
+      // Populate security_id_cache for all securities in this connection
+      await upsertSecurityIdsFromHoldings(connection.id, securities);
     } catch (syncError) {
       // Non-fatal — positions will sync via webhook later
       console.error("Position sync failed (will retry via webhook):", syncError);
