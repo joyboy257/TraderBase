@@ -28,35 +28,37 @@ export default async function DashboardPage() {
 
   // Fetch positions for portfolio value and P&L
   // TODO: Table positions needs current_price and unrealized_pnl populated by a server process
-  const { data: positions } = await supabase
-    .from("positions")
-    .select("current_price, unrealized_pnl")
-    .eq("user_id", userId);
 
-  const portfolioValue = positions?.reduce((sum, p) => sum + Number(p.current_price || 0), 0) ?? 0;
+  // All queries run in parallel — none depend on each other's results
+  const [positionsResult, signalsResult, followedLeadersResult] = await Promise.all([
+    supabase
+      .from("positions")
+      .select("current_price, unrealized_pnl, quantity")
+      .eq("user_id", userId),
+    supabase
+      .from("signals")
+      .select("*, profiles:user_id(id, username, display_name, avatar_url, is_verified)")
+      .eq("is_active", true)
+      .order("created_at", { ascending: false })
+      .limit(4),
+    supabase
+      .from("follows")
+      .select("leader_id, copy_ratio, profiles:leader_id(id, username, display_name, avatar_url)")
+      .eq("follower_id", userId)
+      .eq("is_active", true)
+      .limit(2),
+  ]);
+
+  const positions = positionsResult.data;
+  const signals = signalsResult.data;
+  const followedLeaders = followedLeadersResult.data as { leader_id: string; copy_ratio: number; profiles: { id: string; username: string; display_name: string | null; avatar_url: string | null } | null }[] | null;
+
+  const portfolioValue = positions?.reduce(
+    (sum, p) => sum + (Number(p.quantity || 0) * Number(p.current_price || 0)),
+    0
+  ) ?? 0;
   const totalUnrealizedPnl = positions?.reduce((sum, p) => sum + Number(p.unrealized_pnl || 0), 0) ?? 0;
   const isUp = totalUnrealizedPnl >= 0;
-
-  // Fetch active signals
-  const { data: signals } = await supabase
-    .from("signals")
-    .select("*, profiles:user_id(id, username, display_name, avatar_url, is_verified)")
-    .eq("is_active", true)
-    .order("created_at", { ascending: false })
-    .limit(4);
-
-  // Fetch followed traders
-  type FollowRow = {
-    leader_id: string;
-    copy_ratio: number;
-    profiles: { id: string; username: string; display_name: string | null; avatar_url: string | null } | null;
-  };
-  const { data: followedLeaders } = await supabase
-    .from("follows")
-    .select("leader_id, copy_ratio, profiles:leader_id(id, username, display_name, avatar_url)")
-    .eq("follower_id", userId)
-    .eq("is_active", true)
-    .limit(2) as { data: FollowRow[] | null };
 
   return (
     <div className="space-y-6">
@@ -124,9 +126,11 @@ export default async function DashboardPage() {
               const profile = signal.profiles;
               const entryPrice = Number(signal.entry_price || 0);
               const currentPrice = Number(signal.current_price || entryPrice);
-              const returnPct = signal.action === "BUY"
-                ? ((currentPrice - entryPrice) / entryPrice) * 100
-                : ((entryPrice - currentPrice) / entryPrice) * 100;
+              const returnPct = entryPrice > 0
+                ? (signal.action === "BUY"
+                  ? ((currentPrice - entryPrice) / entryPrice) * 100
+                  : ((entryPrice - currentPrice) / entryPrice) * 100)
+                : 0;
 
               return (
                 <Card key={signal.id} className="p-4 hover:border-[var(--color-border-default)] transition-colors">

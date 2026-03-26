@@ -19,17 +19,21 @@ export default async function SettingsPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
+  if (!user) {
+    return <p>Please sign in to access settings.</p>;
+  }
+
   const { data: profile } = await supabase
     .from("profiles")
     .select("*")
-    .eq("id", user!.id)
+    .eq("id", user.id)
     .single();
 
   // Fetch brokerage connections
   const { data: connections } = await supabase
     .from("brokerage_connections")
     .select("*")
-    .eq("user_id", user!.id)
+    .eq("user_id", user.id)
     .eq("is_active", true)
     .order("linked_at", { ascending: false });
 

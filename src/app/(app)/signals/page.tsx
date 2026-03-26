@@ -10,14 +10,17 @@ import { Filter, ArrowUpDown } from "lucide-react";
 export default async function SignalsPage() {
   const supabase = await createClient();
 
-  const { data: signals } = await supabase
-    .from("signals")
-    .select("*, profiles:user_id(id, username, display_name, avatar_url, is_verified)")
-    .eq("is_active", true)
-    .order("created_at", { ascending: false })
-    .limit(50);
+  // Run auth and signals query in parallel
+  const [{ data: { user } }, { data: signals }] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase
+      .from("signals")
+      .select("*, profiles:user_id(id, username, display_name, avatar_url, is_verified)")
+      .eq("is_active", true)
+      .order("created_at", { ascending: false })
+      .limit(50),
+  ]);
 
-  const { data: { user } } = await supabase.auth.getUser();
   const userId = user?.id ?? "";
 
   // Check which signals the current user is following
@@ -99,9 +102,11 @@ export default async function SignalsPage() {
             const profile = signal.profiles;
             const entryPrice = Number(signal.entry_price || 0);
             const currentPrice = Number(signal.current_price || entryPrice);
-            const returnPct = signal.action === "BUY"
-              ? ((currentPrice - entryPrice) / entryPrice) * 100
-              : ((entryPrice - currentPrice) / entryPrice) * 100;
+            const returnPct = entryPrice > 0
+              ? (signal.action === "BUY"
+                ? ((currentPrice - entryPrice) / entryPrice) * 100
+                : ((entryPrice - currentPrice) / entryPrice) * 100)
+              : 0;
             const isFollowed = followedIds.has(signal.user_id);
 
             return (

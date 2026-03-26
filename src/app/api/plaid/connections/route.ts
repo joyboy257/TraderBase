@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
-import { getInvestmentHoldings } from "@/lib/plaid/client";
+import { getInvestmentHoldings, transformHoldingsToPositions } from "@/lib/plaid/client";
 import { createServerClient } from "@supabase/ssr";
 
 function getServiceClient() {
@@ -56,39 +56,21 @@ export async function POST() {
     }
 
     const serviceClient = getServiceClient();
-    let syncedCount = 0;
 
-    for (const conn of connections) {
-      if (!conn.plaid_access_token_encrypted) continue;
+    // Sync all connections in parallel
+    const results = await Promise.allSettled(
+      connections.map(async (conn) => {
+        if (!conn.plaid_access_token_encrypted) return { conn, positions: [] };
 
-      try {
         const { accounts, holdings, securities } = await getInvestmentHoldings(conn.plaid_access_token_encrypted);
 
-        const positions = accounts.flatMap((account) => {
-          const accountHoldings = holdings.filter(
-            (h) => h.account_id === account.account_id && h.quantity > 0
-          );
-
-          return accountHoldings.map((holding) => {
-            const security = securities.find(
-              (s) => s.security_id === holding.security_id
-            )!;
-
-            const quantity = holding.quantity;
-            const lastPrice = holding.institution_price ?? 0;
-            const costBasis = holding.institution_value ?? 0;
-
-            return {
-              user_id: user.id,
-              brokerage_connection_id: conn.id,
-              ticker: security.ticker_symbol ?? security.name ?? "UNKNOWN",
-              quantity,
-              average_cost: quantity > 0 ? costBasis / quantity : 0,
-              current_price: lastPrice,
-              unrealized_pnl: lastPrice * quantity - costBasis,
-            };
-          });
-        }).filter((p) => p.ticker !== "UNKNOWN" && p.quantity > 0);
+        const positions = transformHoldingsToPositions(
+          accounts,
+          holdings,
+          securities,
+          user.id,
+          conn.id
+        );
 
         if (positions.length > 0) {
           await serviceClient.from("positions").upsert(positions, {
@@ -96,11 +78,20 @@ export async function POST() {
           });
         }
 
-        syncedCount++;
-      } catch (connError) {
-        console.error(`Failed to sync ${conn.brokerage_name}:`, connError);
+        return { conn, positions };
+      })
+    );
+
+    const syncedCount = results.filter(
+      (r) => r.status === "fulfilled" && r.value.positions.length > 0
+    ).length;
+
+    // Log failures
+    results.forEach((r, i) => {
+      if (r.status === "rejected") {
+        console.error(`Failed to sync ${connections[i].brokerage_name}:`, r.reason);
       }
-    }
+    });
 
     return NextResponse.json({ synced: syncedCount });
   } catch (error: unknown) {

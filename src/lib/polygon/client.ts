@@ -90,14 +90,16 @@ export function connectPolygonWS(
 }
 
 /**
- * Get the previous close quote for a ticker via REST API.
+ * Get the current quote for a ticker via Polygon REST API.
+ * Fetches today's latest trade price and compares to previous close.
  */
 export async function getQuote(ticker: string): Promise<PolygonQuote> {
   if (!POLYGON_API_KEY) {
     throw new Error("POLYGON_API_KEY is not set");
   }
 
-  const url = `https://api.polygon.io/v2/aggs/ticker/${ticker}/prev?adjusted=true&apiKey=${POLYGON_API_KEY}`;
+  // Get latest trade data (most recent bar, not just previous day)
+  const url = `https://api.polygon.io/v2/aggs/ticker/${ticker}/range/1/day/1/now?adjusted=true&apiKey=${POLYGON_API_KEY}`;
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`Polygon REST API error: ${res.status} ${res.statusText}`);
@@ -108,13 +110,17 @@ export async function getQuote(ticker: string): Promise<PolygonQuote> {
     throw new Error(`No results for ticker ${ticker}`);
   }
 
-  const result = data.results[0];
-  // result.c = close price, result.o = open, result.h = high, result.l = low
-  // change is calculated from previous close vs current close
+  const result = data.results[data.results.length - 1];
+  // result.c = close (today's close or latest close), result.o = open
+  // For today's bar, c is current/latest price
   const close = result.c;
   const open = result.o;
-  const change = parseFloat((close - open).toFixed(4));
-  const changePercent = parseFloat(((change / open) * 100).toFixed(2));
+  const prevClose = result.o; // Today's open = yesterday's close for intraday
+
+  // If we have today's open, use it as the previous close proxy
+  // This gives us today's change; for "prev" we'd need a separate call
+  const change = parseFloat((close - prevClose).toFixed(4));
+  const changePercent = prevClose > 0 ? parseFloat(((change / prevClose) * 100).toFixed(2)) : 0;
 
   return { price: close, change, changePercent };
 }

@@ -27,6 +27,7 @@ export default function ChatRoom() {
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [roomId, setRoomId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
 
@@ -34,19 +35,20 @@ export default function ChatRoom() {
     // Get current user
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
 
-    // Fetch initial messages
+    // Fetch initial messages and room
     const fetchMessages = async () => {
-      const { data: rooms } = await supabase
+      const { data: room } = await supabase
         .from("chat_rooms")
         .select("id")
         .eq("ticker", ticker)
         .single();
 
-      if (rooms) {
+      if (room) {
+        setRoomId(room.id);
         const { data: msgs } = await supabase
           .from("chat_messages")
           .select("*, profiles:user_id(username, display_name, avatar_url)")
-          .eq("room_id", rooms.id)
+          .eq("room_id", room.id)
           .order("created_at", { ascending: true })
           .limit(100);
 
@@ -55,8 +57,12 @@ export default function ChatRoom() {
     };
 
     fetchMessages();
+  }, [ticker, supabase]);
 
-    // Subscribe to new messages
+  // Subscribe to new messages once roomId is known
+  useEffect(() => {
+    if (!roomId) return;
+
     const channel = supabase
       .channel(`chat:${ticker}`)
       .on(
@@ -65,7 +71,7 @@ export default function ChatRoom() {
           event: "INSERT",
           schema: "public",
           table: "chat_messages",
-          filter: `room_id=in.(SELECT id FROM chat_rooms WHERE ticker='${ticker}')`,
+          filter: `room_id=eq.${roomId}`,
         },
         async (payload) => {
           const { data: msg } = await supabase
@@ -84,7 +90,7 @@ export default function ChatRoom() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [ticker, supabase]);
+  }, [roomId, supabase, ticker]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -166,7 +172,7 @@ export default function ChatRoom() {
                 </span>
               </div>
               <p className="text-sm text-[var(--color-text-secondary)] break-words">
-                {msg.content}
+                {msg.content.replace(/</g, "&lt;").replace(/>/g, "&gt;")}
               </p>
             </div>
           </div>

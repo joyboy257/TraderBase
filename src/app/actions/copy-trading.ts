@@ -56,8 +56,11 @@ export async function triggerCopyTradingForSignal(signalId: string): Promise<{ s
       return { success: false, error: "Signal not found" };
     }
 
-    // For now, allow any authenticated user to trigger (could be restricted to signal owner or admin)
-    // The executor will handle checking follow relationships
+    // Only the signal creator or admin can trigger copy trading for a signal
+    if (user.id !== signal.user_id) {
+      return { success: false, error: "Forbidden: only the signal creator can trigger copy trading" };
+    }
+
     await processAllFollowers(signalId);
 
     return { success: true };

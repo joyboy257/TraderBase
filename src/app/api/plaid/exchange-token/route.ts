@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { exchangePublicToken, getInvestmentHoldings, getAccounts } from "@/lib/plaid/client";
+import { exchangePublicToken, getInvestmentHoldings, getAccounts, transformHoldingsToPositions } from "@/lib/plaid/client";
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { AccountType } from "plaid";
@@ -82,30 +82,13 @@ export async function POST(request: NextRequest) {
     try {
       const { accounts, holdings, securities } = await getInvestmentHoldings(access_token);
 
-      const positions = accounts.flatMap((account) => {
-        const accountHoldings = holdings.filter(
-          (h) => h.account_id === account.account_id && h.quantity > 0
-        );
-
-        return accountHoldings.map((holding) => {
-          const security = securities.find(
-            (s) => s.security_id === holding.security_id
-          )!;
-          const quantity = holding.quantity;
-          const lastPrice = holding.institution_price ?? 0;
-          const costBasis = holding.institution_value ?? 0;
-
-          return {
-            user_id: user.id,
-            brokerage_connection_id: connection.id,
-            ticker: security.ticker_symbol ?? security.name ?? "UNKNOWN",
-            quantity,
-            average_cost: quantity > 0 ? costBasis / quantity : 0,
-            current_price: lastPrice,
-            unrealized_pnl: lastPrice * quantity - costBasis,
-          };
-        });
-      }).filter((p) => p.ticker !== "UNKNOWN" && p.quantity > 0);
+      const positions = transformHoldingsToPositions(
+        accounts,
+        holdings,
+        securities,
+        user.id,
+        connection.id
+      );
 
       if (positions.length > 0) {
         await serviceClient.from("positions").upsert(positions, {
