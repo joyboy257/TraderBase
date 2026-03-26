@@ -73,50 +73,26 @@ All P1 items resolved as of commit `c792560`.
 
 ## P3 — Lower Priority / Advisory
 
-### [ ] Middleware runs on every request including /api/*
-**File:** `src/lib/supabase/middleware.ts`
-> `getUser()` is called on every matched route including `/api/*`. Some API routes (webhook) have their own auth and don't need the session cookie parsed.
->
-> **Fix:** Add `/api/` to the matcher exclusion pattern, or skip `getUser()` for routes starting with `/api/`.
+### [x] ~~Middleware runs on every request including /api/*~~
+**Fixed:** Added `api/` to middleware matcher exclusion pattern in `src/middleware.ts`.
 
----
+### [x] ~~Dead code — tickersRef in usePolygonPrices~~
+**Fixed:** Removed dead `tickersRef` useRef and the `eslint-disable` comment from `usePolygonPrices.ts`.
 
-### [ ] Dead code — tickersRef in usePolygonPrices
-**File:** `src/hooks/usePolygonPrices.ts:17`
-> `const tickersRef = useRef(tickers)` is set but never read. Dead code.
->
-> **Fix:** Remove the `tickersRef` declaration and the `eslint-disable` comment.
+### [x] ~~PlaidLink component — unused abstraction~~
+**Fixed:** Deleted `src/components/plaid/PlaidLink.tsx` (unused; `BrokerageConnector` uses `usePlaidLink` directly).
 
----
+### [x] ~~Copy ratio check dead from one call path~~
+**Fixed:** Added comment in `executor.ts` noting this guard is for direct `executeCopyTrade` calls (processAllFollowers filters `copy_ratio > 0`).
 
-### [ ] PlaidLink component — unused abstraction
-**File:** `src/components/plaid/PlaidLink.tsx`
-> Exported component only used by `BrokerageConnector`. Both share similar logic.
->
-> **Fix:** Either remove `PlaidLink` (if truly unused) or consolidate.
+### [x] ~~POLYGON_API_KEY not in .env.local~~
+**Fixed:** Added `POLYGON_API_KEY=your_polygon_api_key_here` placeholder to `.env.local`.
 
----
-
-### [ ] Copy ratio check dead from one call path
-**File:** `src/lib/copy-trading/executor.ts:92`
-> `if (typedFollow.copy_ratio <= 0)` can never be true when called from `processAllFollowers` (query filters `copy_ratio > 0`). The check is only meaningful if `executeCopyTrade` is called directly.
->
-> **Fix:** Keep the check (it's a valid guard for direct calls), but add a comment noting the query already filters this.
-
----
-
-### [ ] POLYGON_API_KEY not in .env.local
-> Polygon WebSocket and REST calls silently no-op because the API key is not set.
->
-> **Action:** Add `POLYGON_API_KEY` to `.env.local` for development.
-
----
-
-### [ ] Middleware auth protection gap
+### [ ] Middleware auth protection gap — `/traders` pages not protected
 **File:** `src/middleware.ts`
 > `/traders` and `/traders/[username]` are not in the auth-protected route list but show sensitive trading data.
 >
-> **Fix:** Decide if trader profiles should be public (current behavior) or require auth. Update matcher accordingly.
+> **Note:** Decide if trader profiles should be public (current behavior) or require auth.
 
 ---
 

@@ -114,6 +114,8 @@ export async function executeCopyTrade(followerId: string, signalId: string): Pr
     const typedFollow = follow as Follow;
 
     // Skip if copy_ratio is 0
+    // NOTE: when called via processAllFollowers this is never true (query filters copy_ratio > 0),
+    // but this guard protects direct executeCopyTrade calls
     if (typedFollow.copy_ratio <= 0) {
       return { success: false, error: "Copy ratio is 0" };
     }
