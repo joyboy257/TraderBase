@@ -84,18 +84,9 @@ export function HowItWorks() {
               className="step-card relative p-8 bg-[var(--color-bg-surface)] border border-[var(--color-border-subtle)] rounded-xl"
             >
               {/* Step number */}
-              <span className="font-data text-6xl font-bold text-[var(--color-bg-elevated)] absolute -top-4 -left-2">
+              <span className="font-data text-6xl font-bold text-[var(--color-bg-elevated)] absolute -top-4 -left-2 select-none">
                 {step.number}
               </span>
-
-              {/* Glow accent */}
-              <div
-                className="absolute top-0 left-0 w-full h-1 rounded-t-xl"
-                style={{
-                  background:
-                    "linear-gradient(90deg, var(--color-accent-green), var(--color-accent-purple))",
-                }}
-              />
 
               <div className="relative pt-8">
                 <h3 className="font-display text-2xl text-[var(--color-text-primary)] mb-4">
