@@ -1,4 +1,5 @@
 import { PlaidApi, Configuration, Products, CountryCode } from "plaid";
+import axios from "axios";
 
 function getBasePath(): string {
   switch (process.env.PLAID_ENV) {
@@ -53,4 +54,28 @@ export async function getAccounts(accessToken: string) {
     access_token: accessToken,
   });
   return response.data;
+}
+
+/**
+ * Verify a Plaid webhook is legitimate by calling /item/webhook/get.
+ * The Plaid SDK does not expose this endpoint, so we call it directly.
+ */
+export async function verifyPlaidWebhook(accessToken: string): Promise<boolean> {
+  try {
+    const basePath = getBasePath();
+    const response = await axios.post(
+      `${basePath}/item/webhook/get`,
+      { access_token: accessToken },
+      {
+        headers: {
+          "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID ?? "",
+          "PLAID-SECRET": process.env.PLAID_SECRET ?? "",
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    return response.status === 200;
+  } catch {
+    return false;
+  }
 }

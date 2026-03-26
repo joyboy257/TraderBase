@@ -37,12 +37,14 @@ export default async function TraderProfilePage({
     .limit(10);
 
   // Check if current user follows this trader
-  const { data: follow } = await supabase
-    .from("follows")
-    .select("*")
-    .eq("follower_id", user!.id)
-    .eq("leader_id", trader.id)
-    .single();
+  const { data: follow } = user
+    ? await supabase
+        .from("follows")
+        .select("*")
+        .eq("follower_id", user.id)
+        .eq("leader_id", trader.id)
+        .single()
+    : { data: null };
 
   // Get follower count
   const { count: followerCount } = await supabase
@@ -51,12 +53,13 @@ export default async function TraderProfilePage({
     .eq("leader_id", trader.id)
     .eq("is_active", true);
 
-  // Mock stats (would come from real P&L in production)
+  // TODO: Stats like return30d, returnAllTime, win_rate need columns in profiles table or a separate stats table
+  // Showing placeholder values since these require historical P&L calculation
   const stats = {
-    return30d: 32.5,
-    returnAllTime: 187.3,
-    winRate: 68,
-    totalTrades: 234,
+    return30d: null,
+    returnAllTime: null,
+    winRate: null,
+    totalTrades: signals?.length ?? 0,
   };
 
   return (
@@ -124,8 +127,8 @@ export default async function TraderProfilePage({
               <TrendingUp size={12} className="text-[var(--color-text-muted)]" />
               <span className="text-xs text-[var(--color-text-muted)]">30D Return</span>
             </div>
-            <span className="font-data text-2xl font-bold text-[var(--color-accent-green)]">
-              {formatPercent(stats.return30d)}
+            <span className="font-data text-2xl font-bold text-[var(--color-text-muted)]">
+              {stats.return30d != null ? formatPercent(stats.return30d) : "—"}
             </span>
           </div>
           <div>
@@ -133,8 +136,8 @@ export default async function TraderProfilePage({
               <BarChart2 size={12} className="text-[var(--color-text-muted)]" />
               <span className="text-xs text-[var(--color-text-muted)]">All-Time Return</span>
             </div>
-            <span className="font-data text-2xl font-bold text-[var(--color-accent-green)]">
-              {formatPercent(stats.returnAllTime)}
+            <span className="font-data text-2xl font-bold text-[var(--color-text-muted)]">
+              {stats.returnAllTime != null ? formatPercent(stats.returnAllTime) : "—"}
             </span>
           </div>
           <div>
@@ -142,8 +145,8 @@ export default async function TraderProfilePage({
               <Target size={12} className="text-[var(--color-text-muted)]" />
               <span className="text-xs text-[var(--color-text-muted)]">Win Rate</span>
             </div>
-            <span className="font-data text-2xl font-bold text-[var(--color-text-primary)]">
-              {stats.winRate}%
+            <span className="font-data text-2xl font-bold text-[var(--color-text-muted)]">
+              {stats.winRate != null ? `${stats.winRate}%` : "—"}
             </span>
           </div>
           <div>

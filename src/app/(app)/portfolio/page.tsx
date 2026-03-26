@@ -4,20 +4,33 @@ import { Badge } from "@/components/ui/Badge";
 import { Briefcase, TrendingUp, TrendingDown, ExternalLink } from "lucide-react";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 
-const positions = [
-  { id: "1", ticker: "AAPL", name: "Apple Inc.", quantity: 50, avgCost: 172.50, currentPrice: 185.32, sector: "Technology" },
-  { id: "2", ticker: "NVDA", name: "NVIDIA Corp.", quantity: 20, avgCost: 650.00, currentPrice: 875.50, sector: "Semiconductors" },
-  { id: "3", ticker: "TSLA", name: "Tesla Inc.", quantity: 30, avgCost: 220.00, currentPrice: 242.80, sector: "EV / Auto" },
-  { id: "4", ticker: "META", name: "Meta Platforms", quantity: 15, avgCost: 480.00, currentPrice: 498.70, sector: "Social Media" },
-];
-
 export default async function PortfolioPage() {
-  const totalValue = positions.reduce((sum, p) => sum + p.quantity * p.currentPrice, 0);
-  const totalCost = positions.reduce((sum, p) => sum + p.quantity * p.avgCost, 0);
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const userId = user?.id ?? "";
+
+  // Fetch positions with brokerage connection info
+  const { data: positions } = await supabase
+    .from("positions")
+    .select("*, brokerage_connections:brokerage_connection_id(brokerage_name)")
+    .eq("user_id", userId);
+
+  // Fetch total unrealized P&L
+  const { data: positionsForPnL } = await supabase
+    .from("positions")
+    .select("unrealized_pnl")
+    .eq("user_id", userId);
+
+  const totalUnrealizedPnl = positionsForPnL?.reduce((sum, p) => sum + Number(p.unrealized_pnl || 0), 0) ?? 0;
+
+  // Calculate totals from positions
+  const totalValue = positions?.reduce((sum, p) => sum + (Number(p.quantity) * Number(p.current_price || 0)), 0) ?? 0;
+  const totalCost = positions?.reduce((sum, p) => sum + (Number(p.quantity) * Number(p.average_cost || 0)), 0) ?? 0;
   const totalPnL = totalValue - totalCost;
-  const totalPnLPct = (totalPnL / totalCost) * 100;
-  const dayChange = 234.50;
-  const dayChangePct = (dayChange / (totalValue - dayChange)) * 100;
+  const totalPnLPct = totalCost > 0 ? (totalPnL / totalCost) * 100 : 0;
+  // Day change is approximated from unrealized_pnl since we don't have day-level cost basis
+  const dayChange = 0;
+  const dayChangePct = 0;
   const isUp = dayChange >= 0;
 
   return (
@@ -29,7 +42,7 @@ export default async function PortfolioPage() {
             Portfolio
           </h1>
           <p className="text-sm text-[var(--color-text-muted)] mt-0.5">
-            Holdings across 2 linked brokerages · Real-time via Plaid
+            Holdings across {positions?.length ?? 0} linked brokerages · Real-time via Plaid
           </p>
         </div>
         <Badge variant="neutral" className="text-xs">
@@ -55,7 +68,7 @@ export default async function PortfolioPage() {
               <TrendingDown size={14} className="text-[var(--color-sell)]" />
             )}
             <span className={`font-data text-sm font-semibold ${isUp ? "text-[var(--color-accent-green)]" : "text-[var(--color-sell)]"}`}>
-              {isUp ? "+" : ""}{formatCurrency(dayChange)} ({formatPercent(dayChangePct)})
+              {isUp ? "+" : ""}{formatCurrency(totalPnL)} ({formatPercent(totalPnLPct)})
             </span>
             <span className="text-xs text-[var(--color-text-muted)]">today</span>
           </div>
@@ -91,7 +104,7 @@ export default async function PortfolioPage() {
         <Card className="col-span-6 lg:col-span-2 p-5 flex flex-col justify-between">
           <p className="text-xs text-[var(--color-text-muted)] mb-2">Holdings</p>
           <p className="font-data text-2xl font-bold text-[var(--color-text-primary)]">
-            {positions.length}
+            {positions?.length ?? 0}
           </p>
           <p className="text-sm text-[var(--color-text-muted)]">positions</p>
         </Card>
@@ -121,12 +134,13 @@ export default async function PortfolioPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-border-subtle)]">
-              {positions.map((pos) => {
-                const marketValue = pos.quantity * pos.currentPrice;
-                const costBasis = pos.quantity * pos.avgCost;
+              {(positions ?? []).map((pos) => {
+                const marketValue = Number(pos.quantity) * Number(pos.current_price || 0);
+                const costBasis = Number(pos.quantity) * Number(pos.average_cost || 0);
                 const pnl = marketValue - costBasis;
-                const pnlPct = (pnl / costBasis) * 100;
+                const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
                 const isPositive = pnl >= 0;
+                const brokerage = pos.brokerage_connections;
 
                 return (
                   <tr key={pos.id} className="hover:bg-[var(--color-bg-elevated)] transition-colors">
@@ -136,10 +150,12 @@ export default async function PortfolioPage() {
                       </span>
                     </td>
                     <td className="px-5 py-4">
-                      <span className="text-sm text-[var(--color-text-secondary)]">{pos.name}</span>
+                      <span className="text-sm text-[var(--color-text-secondary)]">
+                        {brokerage?.brokerage_name ?? pos.ticker}
+                      </span>
                     </td>
                     <td className="px-5 py-4">
-                      <span className="text-xs text-[var(--color-text-muted)]">{pos.sector}</span>
+                      <span className="text-xs text-[var(--color-text-muted)]">—</span>
                     </td>
                     <td className="px-5 py-4 text-right">
                       <span className="font-data text-sm text-[var(--color-text-secondary)]">
@@ -148,12 +164,12 @@ export default async function PortfolioPage() {
                     </td>
                     <td className="px-5 py-4 text-right">
                       <span className="font-data text-sm text-[var(--color-text-secondary)]">
-                        ${pos.avgCost.toFixed(2)}
+                        ${Number(pos.average_cost || 0).toFixed(2)}
                       </span>
                     </td>
                     <td className="px-5 py-4 text-right">
                       <span className="font-data text-sm text-[var(--color-text-primary)]">
-                        ${pos.currentPrice.toFixed(2)}
+                        ${Number(pos.current_price || 0).toFixed(2)}
                       </span>
                     </td>
                     <td className="px-5 py-4 text-right">

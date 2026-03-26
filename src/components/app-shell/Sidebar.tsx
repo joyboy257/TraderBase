@@ -12,6 +12,7 @@ import {
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePolygonPrices } from "@/hooks/usePolygonPrices";
 
 const navSections = [
   {
@@ -43,17 +44,11 @@ const navSections = [
   },
 ];
 
-// Mock watchlist data — in production this comes from Polygon.io
-const watchlist = [
-  { ticker: "AAPL", price: 185.32, change: 1.24 },
-  { ticker: "NVDA", price: 875.50, change: 3.21 },
-  { ticker: "TSLA", price: 242.80, change: -1.55 },
-  { ticker: "META", price: 498.70, change: 2.10 },
-  { ticker: "SPY", price: 521.45, change: 0.33 },
-];
+const WATCHLIST_TICKERS = ["AAPL", "NVDA", "TSLA", "META", "SPY"];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { prices, isConnected } = usePolygonPrices(WATCHLIST_TICKERS);
 
   return (
     <aside className="fixed left-0 top-14 bottom-0 w-56 bg-[var(--color-bg-secondary)] border-r border-[var(--color-border-subtle)] flex flex-col z-40 overflow-hidden">
@@ -90,34 +85,56 @@ export function Sidebar() {
 
       {/* Watchlist */}
       <div className="border-t border-[var(--color-border-subtle)] p-3">
-        <p className="text-[10px] font-semibold tracking-widest text-[var(--color-text-muted)] uppercase mb-2 px-1">
-          Watchlist
-        </p>
+        <div className="flex items-center justify-between mb-2 px-1">
+          <p className="text-[10px] font-semibold tracking-widest text-[var(--color-text-muted)] uppercase">
+            Watchlist
+          </p>
+          <span className="flex items-center gap-1">
+            <span
+              className={cn(
+                "w-1.5 h-1.5 rounded-full",
+                isConnected ? "bg-[var(--color-accent-green)]" : "bg-[var(--color-text-muted)]"
+              )}
+            />
+            <span className="text-[10px] text-[var(--color-text-muted)]">
+              {isConnected ? "Live" : "Offline"}
+            </span>
+          </span>
+        </div>
         <div className="space-y-0.5">
-          {watchlist.map(({ ticker, price, change }) => (
-            <Link
-              key={ticker}
-              href={`/chat/${ticker}`}
-              className="flex items-center justify-between px-2 py-1.5 rounded hover:bg-[var(--color-bg-elevated)] transition-colors group"
-            >
-              <span className="font-data text-xs font-semibold text-[var(--color-text-primary)]">
-                {ticker}
-              </span>
-              <div className="flex items-center gap-2">
-                <span className="font-data text-xs text-[var(--color-text-secondary)]">
-                  ${price.toFixed(2)}
+          {WATCHLIST_TICKERS.map((ticker) => {
+            const data = prices.get(ticker);
+            const price = data?.price ?? 0;
+            const changePercent = data?.changePercent ?? 0;
+            const displayPrice = price > 0 ? `$${price.toFixed(2)}` : "--";
+            const displayChange = changePercent !== 0
+              ? `${changePercent >= 0 ? "+" : ""}${changePercent.toFixed(2)}%`
+              : "--";
+            return (
+              <Link
+                key={ticker}
+                href={`/chat/${ticker}`}
+                className="flex items-center justify-between px-2 py-1.5 rounded hover:bg-[var(--color-bg-elevated)] transition-colors group"
+              >
+                <span className="font-data text-xs font-semibold text-[var(--color-text-primary)]">
+                  {ticker}
                 </span>
-                <span
-                  className={cn(
-                    "font-data text-[10px]",
-                    change >= 0 ? "text-[var(--color-accent-green)]" : "text-[var(--color-sell)]"
-                  )}
-                >
-                  {change >= 0 ? "+" : ""}{change.toFixed(2)}%
-                </span>
-              </div>
-            </Link>
-          ))}
+                <div className="flex items-center gap-2">
+                  <span className="font-data text-xs text-[var(--color-text-secondary)]">
+                    {displayPrice}
+                  </span>
+                  <span
+                    className={cn(
+                      "font-data text-[10px]",
+                      changePercent > 0 ? "text-[var(--color-accent-green)]" : changePercent < 0 ? "text-[var(--color-sell)]" : "text-[var(--color-text-muted)]"
+                    )}
+                  >
+                    {displayChange}
+                  </span>
+                </div>
+              </Link>
+            );
+          })}
         </div>
       </div>
     </aside>

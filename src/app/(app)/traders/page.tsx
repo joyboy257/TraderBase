@@ -6,16 +6,60 @@ import { Card } from "@/components/ui/Card";
 import { formatPercent, formatCompactNumber } from "@/lib/utils";
 import { Users, TrendingUp, Zap, ExternalLink } from "lucide-react";
 
-const mockTraders = [
-  { id: "1", username: "sirjack", displayName: "Sir Jack", avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop", bio: "Momentum trader. 10+ years experience. I ride the waves.", return30d: 42.5, followers: 12400, signals: 156, isVerified: true, isFollowing: true },
-  { id: "2", username: "thequant", displayName: "The Quant", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop", bio: "Algorithmic strategies. Low frequency, high conviction.", return30d: 35.1, followers: 15600, signals: 89, isVerified: true, isFollowing: true },
-  { id: "3", username: "optionsking", displayName: "Options King", avatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop", bio: "Premium selling and directional options trades.", return30d: 67.2, followers: 22100, signals: 234, isVerified: true, isFollowing: false },
-  { id: "4", username: "diamondhands", displayName: "Diamond Hands", avatar: "https://images.unsplash.com/photo-1527980965255-d3b416303d12?w=100&h=100&fit=crop", bio: "Long-term value investing. Patience is the edge.", return30d: 18.7, followers: 8900, signals: 45, isVerified: true, isFollowing: false },
-  { id: "5", username: "valuehunter", displayName: "Value Hunter", avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop", bio: "Deep value. Contrarian. Currently long energy and financials.", return30d: 12.4, followers: 6200, signals: 67, isVerified: true, isFollowing: false },
-  { id: "6", username: "divhunter", displayName: "Div Hunter", avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop", bio: "Yield-focused. Building passive income through dividend growth.", return30d: 8.3, followers: 4800, signals: 112, isVerified: true, isFollowing: false },
-];
-
 export default async function TradersPage() {
+  const supabase = await createClient();
+
+  // Fetch verified traders
+  const { data: traders } = await supabase
+    .from("profiles")
+    .select("id, username, display_name, avatar_url, bio, is_trader, is_verified")
+    .eq("is_trader", true)
+    .eq("is_verified", true)
+    .limit(20);
+
+  const traderIds = traders?.map(t => t.id) ?? [];
+
+  // Get follower counts for each trader
+  const { data: followerCounts } = traderIds.length > 0
+    ? await supabase
+        .from("follows")
+        .select("leader_id")
+        .in("leader_id", traderIds)
+        .eq("is_active", true)
+    : { data: [] };
+
+  // Get signal counts for each trader
+  const { data: signalCounts } = traderIds.length > 0
+    ? await supabase
+        .from("signals")
+        .select("user_id")
+        .in("user_id", traderIds)
+        .eq("is_active", true)
+    : { data: [] };
+
+  // Count signals per user
+  const signalCountMap: Record<string, number> = {};
+  (signalCounts ?? []).forEach(s => {
+    signalCountMap[s.user_id] = (signalCountMap[s.user_id] || 0) + 1;
+  });
+
+  // Count followers per user
+  const followerCountMap: Record<string, number> = {};
+  (followerCounts ?? []).forEach(f => {
+    followerCountMap[f.leader_id] = (followerCountMap[f.leader_id] || 0) + 1;
+  });
+
+  // Build follower count for current user to know who's followed
+  const { data: { user } } = await supabase.auth.getUser();
+  const userId = user?.id ?? "";
+  const { data: myFollows } = await supabase
+    .from("follows")
+    .select("leader_id")
+    .eq("follower_id", userId)
+    .eq("is_active", true);
+
+  const followedIds = new Set(myFollows?.map(f => f.leader_id) ?? []);
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -25,7 +69,7 @@ export default async function TradersPage() {
             Traders
           </h1>
           <p className="text-sm text-[var(--color-text-muted)] mt-0.5">
-            {mockTraders.length} verified traders · All linked to live brokerage accounts
+            {(traders ?? []).length} verified traders · All linked to live brokerage accounts
           </p>
         </div>
       </div>
@@ -38,7 +82,9 @@ export default async function TradersPage() {
           </div>
           <div>
             <p className="text-xs text-[var(--color-text-muted)]">Total Followers</p>
-            <p className="font-data font-semibold text-[var(--color-text-primary)]">68.7K</p>
+            <p className="font-data font-semibold text-[var(--color-text-primary)]">
+              {formatCompactNumber(Object.values(followerCountMap).reduce((a, b) => a + b, 0))}
+            </p>
           </div>
         </Card>
         <Card className="px-5 py-3 flex items-center gap-3">
@@ -47,7 +93,7 @@ export default async function TradersPage() {
           </div>
           <div>
             <p className="text-xs text-[var(--color-text-muted)]">Avg 30D Return</p>
-            <p className="font-data font-semibold text-[var(--color-accent-green)]">+24.6%</p>
+            <p className="font-data font-semibold text-[var(--color-accent-green)]">—</p>
           </div>
         </Card>
         <Card className="px-5 py-3 flex items-center gap-3">
@@ -56,76 +102,84 @@ export default async function TradersPage() {
           </div>
           <div>
             <p className="text-xs text-[var(--color-text-muted)]">Signals Today</p>
-            <p className="font-data font-semibold text-[var(--color-text-primary)]">127</p>
+            <p className="font-data font-semibold text-[var(--color-text-primary)]">
+              {signalCounts?.length ?? 0}
+            </p>
           </div>
         </Card>
       </div>
 
       {/* Traders grid */}
       <div className="grid md:grid-cols-2 gap-4">
-        {mockTraders.map((trader) => (
-          <Card key={trader.id} className="p-5 hover:border-[var(--color-border-default)] transition-colors">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <Avatar
-                  src={trader.avatar}
-                  alt={trader.displayName}
-                  size="lg"
-                />
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="font-semibold text-[var(--color-text-primary)] truncate">
-                      {trader.displayName}
+        {(traders ?? []).map((trader) => {
+          const followerCount = followerCountMap[trader.id] || 0;
+          const signalCount = signalCountMap[trader.id] || 0;
+          const isFollowing = followedIds.has(trader.id);
+
+          return (
+            <Card key={trader.id} className="p-5 hover:border-[var(--color-border-default)] transition-colors">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <Avatar
+                    src={trader.avatar_url}
+                    alt={trader.display_name ?? trader.username}
+                    size="lg"
+                  />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className="font-semibold text-[var(--color-text-primary)] truncate">
+                        {trader.display_name ?? trader.username}
+                      </span>
+                      {trader.is_verified && <Badge variant="verified">Verified</Badge>}
+                    </div>
+                    <span className="text-xs text-[var(--color-text-muted)]">
+                      @{trader.username}
                     </span>
-                    {trader.isVerified && <Badge variant="verified">Verified</Badge>}
                   </div>
-                  <span className="text-xs text-[var(--color-text-muted)]">
-                    @{trader.username}
-                  </span>
+                </div>
+
+                <div className="text-right">
+                  <p className="font-data font-bold text-xl text-[var(--color-text-muted)]">
+                    —
+                  </p>
+                  <p className="text-[10px] text-[var(--color-text-muted)] uppercase tracking-wider">30D Return</p>
                 </div>
               </div>
 
-              <div className="text-right">
-                <p className={`font-data font-bold text-xl ${trader.return30d >= 0 ? "text-[var(--color-accent-green)]" : "text-[var(--color-sell)]"}`}>
-                  {trader.return30d >= 0 ? "+" : ""}{trader.return30d.toFixed(1)}%
-                </p>
-                <p className="text-[10px] text-[var(--color-text-muted)] uppercase tracking-wider">30D Return</p>
-              </div>
-            </div>
+              <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-4 line-clamp-2">
+                {trader.bio ?? "No bio provided."}
+              </p>
 
-            <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-4 line-clamp-2">
-              {trader.bio}
-            </p>
-
-            <div className="flex items-center gap-6 mb-4">
-              <div>
-                <p className="text-xs text-[var(--color-text-muted)] mb-0.5">Followers</p>
-                <p className="font-data font-semibold text-sm text-[var(--color-text-primary)]">
-                  {formatCompactNumber(trader.followers)}
-                </p>
+              <div className="flex items-center gap-6 mb-4">
+                <div>
+                  <p className="text-xs text-[var(--color-text-muted)] mb-0.5">Followers</p>
+                  <p className="font-data font-semibold text-sm text-[var(--color-text-primary)]">
+                    {formatCompactNumber(followerCount)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-[var(--color-text-muted)] mb-0.5">Signals</p>
+                  <p className="font-data font-semibold text-sm text-[var(--color-text-primary)]">
+                    {signalCount}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-[var(--color-text-muted)] mb-0.5">Signals</p>
-                <p className="font-data font-semibold text-sm text-[var(--color-text-primary)]">
-                  {trader.signals}
-                </p>
-              </div>
-            </div>
 
-            <div className="flex gap-2">
-              <Button
-                variant={trader.isFollowing ? "secondary" : "primary"}
-                size="sm"
-                className="flex-1"
-              >
-                {trader.isFollowing ? "Following" : "Follow"}
-              </Button>
-              <Button variant="ghost" size="sm" className="px-2">
-                <ExternalLink size={14} />
-              </Button>
-            </div>
-          </Card>
-        ))}
+              <div className="flex gap-2">
+                <Button
+                  variant={isFollowing ? "secondary" : "primary"}
+                  size="sm"
+                  className="flex-1"
+                >
+                  {isFollowing ? "Following" : "Follow"}
+                </Button>
+                <Button variant="ghost" size="sm" className="px-2">
+                  <ExternalLink size={14} />
+                </Button>
+              </div>
+            </Card>
+          );
+        })}
       </div>
     </div>
   );
