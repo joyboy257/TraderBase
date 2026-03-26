@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { formatPercent, formatCompactNumber } from "@/lib/utils";
 import { Users, TrendingUp, Zap } from "lucide-react";
-import { FollowButton as FollowButtonGrid } from "@/components/social/FollowButtonGrid";
+import { FollowButtonGrid } from "@/components/social/FollowButtonGrid";
 import { getTopTraders } from "@/lib/traders";
 
 export default async function TradersPage() {

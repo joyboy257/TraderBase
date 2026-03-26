@@ -13,8 +13,8 @@ function getServiceClient() {
  */
 export interface PlaidSecurity {
   security_id: string;
-  ticker_symbol?: string;
-  name?: string;
+  ticker_symbol?: string | null;
+  name?: string | null;
 }
 
 /**

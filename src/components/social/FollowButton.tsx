@@ -37,15 +37,19 @@ export function FollowButton({ leaderId, leaderUsername, isFollowing: initialIsF
   }
 
   return (
-    <Button
-      variant={isFollowing ? "secondary" : "primary"}
-      size="sm"
-      onClick={handleFollow}
-      disabled={isPending}
-      className="flex-1"
-    >
-      {isPending ? "..." : isFollowing ? "Following" : "Follow"}
-    </Button>
-    {error && <span className="text-xs text-[var(--color-sell)]">{error}</span>}
+    <>
+      <Button
+        variant={isFollowing ? "secondary" : "primary"}
+        size="sm"
+        onClick={handleFollow}
+        disabled={isPending}
+        className="flex-1"
+      >
+        {isPending ? "..." : isFollowing ? "Following" : "Follow"}
+      </Button>
+      {error && (
+        <span className="text-xs text-[var(--color-sell)]">{error}</span>
+      )}
+    </>
   );
 }

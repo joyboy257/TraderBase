@@ -13,7 +13,7 @@ interface FollowButtonGridProps {
   followerId: string;
 }
 
-export function FollowButton({ leaderId, leaderUsername, isFollowing: initialIsFollowing, followerId }: FollowButtonGridProps) {
+export function FollowButtonGrid({ leaderId, leaderUsername, isFollowing: initialIsFollowing, followerId }: FollowButtonGridProps) {
   const [isPending, startTransition] = useTransition();
   const [isFollowing, setIsFollowing] = useState(initialIsFollowing);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +53,9 @@ export function FollowButton({ leaderId, leaderUsername, isFollowing: initialIsF
           <ExternalLink size={14} />
         </Button>
       </Link>
+      {error && (
+        <span className="text-xs text-[var(--color-sell)]">{error}</span>
+      )}
     </div>
-    {error && <span className="text-xs text-[var(--color-sell)]">{error}</span>}
   );
 }

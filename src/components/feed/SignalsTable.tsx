@@ -113,7 +113,7 @@ export function SignalsTable({ initialSignals, followedIds, userId }: SignalsTab
             >
               {/* Trader */}
               <div className="col-span-3 flex items-center gap-2.5">
-                <Avatar src={profile?.avatar_url} alt={profile?.display_name ?? profile?.username} size="sm" />
+                <Avatar src={profile?.avatar_url} alt={profile?.display_name ?? profile?.username ?? "User"} size="sm" />
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
                     <span className="text-sm font-medium text-[var(--color-text-primary)] truncate">

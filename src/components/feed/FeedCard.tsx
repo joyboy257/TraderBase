@@ -87,7 +87,7 @@ export function FeedCard({ post, initialLiked = false, currentUserId }: FeedCard
           <div className="flex items-center gap-2.5">
             <Avatar
               src={profile?.avatar_url}
-              alt={profile?.display_name ?? profile?.username}
+              alt={profile?.display_name ?? profile?.username ?? "User"}
               size="md"
             />
             <div>

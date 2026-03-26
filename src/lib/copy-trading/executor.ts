@@ -155,23 +155,24 @@ export async function executeCopyTrade(followerId: string, signalId: string): Pr
 
     // Step 6: Atomic INSERT ... ON CONFLICT DO NOTHING RETURNING
     // Winner: gets a row back, proceeds to call Plaid
-    // Loser: gets null, should not call Plaid
+    // Loser: gets null (duplicate key), should not call Plaid
     const { data: insertResult, error: insertError } = await serviceClient
       .from("copied_trades")
-      .insert({
-        idempotency_key: idempotencyKey,
-        user_id: followerId,
-        signal_id: signalId,
-        brokerage_connection_id: typedBrokerage.id,
-        ticker: typedSignal.ticker,
-        action: typedSignal.action,
-        quantity: roundedQuantity,
-        price: entryPrice,
-        executed_at: new Date().toISOString(),
-        status: "pending",
-      })
-      .onConflict("idempotency_key")
-      .doNothing()
+      .upsert(
+        {
+          idempotency_key: idempotencyKey,
+          user_id: followerId,
+          signal_id: signalId,
+          brokerage_connection_id: typedBrokerage.id,
+          ticker: typedSignal.ticker,
+          action: typedSignal.action,
+          quantity: roundedQuantity,
+          price: entryPrice,
+          executed_at: new Date().toISOString(),
+          status: "pending",
+        },
+        { onConflict: "idempotency_key", ignoreDuplicates: true }
+      )
       .select("id, status")
       .single();
 
