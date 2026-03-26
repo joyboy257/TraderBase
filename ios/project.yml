@@ -1,0 +1,49 @@
+name: TraderBase
+options:
+  bundleIdPrefix: com.traderbase
+  deploymentTarget:
+    iOS: "16.0"
+  xcodeVersion: "15.0"
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.9"
+    INFOPLIST_KEY_CFBundleDisplayName: TraderBase
+
+targets:
+  TraderBase:
+    type: application
+    platform: iOS
+    sources:
+      - path: TraderBase
+        excludes:
+          - "**/.DS_Store"
+    settings:
+      base:
+        INFOPLIST_FILE: TraderBase/Resources/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.traderbase.app
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_NSCameraUsageDescription: "TraderBase needs camera access to scan documents"
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "TraderBase needs photo library access to upload profile images"
+    dependencies:
+      - package: Supabase
+      - package: SnapKit
+
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    from: "2.2.0"
+  SnapKit:
+    url: https://github.com/SnapKit/SnapKit
+    from: "5.7.0"

@@ -96,6 +96,60 @@ All P1 items resolved as of commit `c792560`.
 
 ---
 
+## iOS App (TraderBase)
+
+**Status:** Scaffold complete — requires credentials to build
+
+### Setup (blocked on credentials)
+- [ ] Run `brew install xcodegen` on your Mac
+- [ ] Replace placeholder values in `ios/TraderBase/Core/Supabase/SupabaseClient.swift`:
+  - `supabaseURL` → real Supabase project URL
+  - `supabaseAnonKey` → real anon key
+- [ ] Create App Store app and configure `PRODUCT_BUNDLE_IDENTIFIER` in `project.yml`
+- [ ] Set `DEVELOPMENT_TEAM` in `project.yml` (your Apple Developer team ID)
+- [ ] Connect Plaid Link SDK for brokerage connection (iOS Swift Package)
+- [ ] Integrate Polygon.io iOS SDK for real-time price streaming
+
+### When ready to build
+```bash
+cd ios
+xcodegen generate  # generates .xcodeproj from project.yml
+open TraderBase.xcodeproj  # opens in Xcode
+# Select iPhone simulator → Run (⌘R)
+```
+
+### Project structure
+```
+ios/
+├── project.yml                          # XcodeGen config (defines all targets + packages)
+└── TraderBase/
+    ├── App/TraderBaseApp.swift          # @main entry, RootView routing
+    ├── Core/
+    │   ├── Supabase/SupabaseClient.swift # Client singleton + storage driver
+    │   ├── Models/                      # User, Signal, Position, Trade, Follow
+    │   └── Services/                   # Auth, Signals, CopyTrading, Portfolio, Traders
+    ├── Features/
+    │   ├── Auth/LoginView.swift         # Magic link + Google OAuth
+    │   ├── Dashboard/                   # Portfolio summary + live signals feed
+    │   ├── Signals/                     # Filterable signals list
+    │   ├── Traders/                     # Trader discovery + profile
+    │   ├── Portfolio/                   # Positions / History / Copied tabs
+    │   └── Settings/                    # Copy settings, brokerages, profile, notifications
+    ├── Components/                      # SharedComponents, Buttons, Cards
+    └── Resources/                      # Info.plist, Assets.xcassets
+```
+
+### Dependencies (via SPM — declared in project.yml)
+- `supabase-swift` (v2.2.0) — Auth + Database client
+- `SnapKit` (v5.7.0) — Auto Layout DSL (if UIKit views needed)
+
+### Remaining web backend TODOs
+- [ ] Run `copied_trades` idempotency migration in Supabase SQL editor
+- [ ] Decide `/traders` auth protection (public or auth-required)
+- [ ] Add Vitest test infrastructure to web app
+
+---
+
 ## Done (2026-03-26)
 
 - [x] Dashboard portfolio value: multiply by quantity (was summing only `current_price`)
