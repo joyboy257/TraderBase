@@ -45,86 +45,29 @@ All P1 items resolved as of commit `c792560`.
 
 ## P2 — Medium Priority
 
-### [ ] Polygon WebSocket reconnect — no exponential backoff
-**File:** `src/lib/polygon/client.ts:75`
-> Reconnect uses fixed 3-second delay. During a Polygon outage, all clients reconnect simultaneously after exactly 3s — thundering herd problem.
->
-> **Fix:** Implement exponential backoff with jitter: `delay = min(baseDelay * 2^attempt + random_jitter, maxDelay)`. Cap at ~30s.
+### [x] ~~Polygon WebSocket reconnect — no exponential backoff~~
+**Fixed:** Exponential backoff with jitter added. `delay = min(baseDelay * 2^attempt + random_jitter, maxDelay)`. Cap at 30s. Resets attempt counter on successful reconnect.
 
----
-
-### [ ] copied_trades table — SQL not applied to Supabase
-> The schema SQL was generated but has not been run in the Supabase project.
->
-> **Action:** Run the following in the Supabase SQL editor:
-> ```sql
-> CREATE TABLE public.copied_trades (
->   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
->   user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
->   signal_id UUID REFERENCES public.signals(id) ON DELETE CASCADE,
->   brokerage_connection_id UUID REFERENCES public.brokerage_connections(id) ON DELETE SET NULL,
->   ticker TEXT NOT NULL,
->   action TEXT NOT NULL CHECK (action IN ('BUY', 'SELL')),
->   quantity DECIMAL(12,4) NOT NULL,
->   price DECIMAL(10,2) NOT NULL,
->   executed_at TIMESTAMPTZ NOT NULL,
->   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'executed', 'failed')),
->   error_message TEXT,
->   created_at TIMESTAMPTZ DEFAULT NOW()
-> );
-> CREATE INDEX idx_copied_trades_user_id ON public.copied_trades(user_id);
-> CREATE INDEX idx_copied_trades_signal_id ON public.copied_trades(signal_id);
-> ALTER TABLE public.copied_trades ENABLE ROW LEVEL SECURITY;
-> CREATE POLICY "Users can view own copied trades" ON public.copied_trades FOR SELECT USING (auth.uid() = user_id);
-> CREATE POLICY "Service role can insert copied trades" ON public.copied_trades FOR INSERT WITH CHECK (auth.role() = 'service_role');
-> ```
-
----
+### [ ] `copied_trades` table — SQL needs to be run in Supabase
+> Migration file created at `supabase/migrations/20260326_add_copied_trades_idempotency.sql`. The idempotency_key column + unique index must be applied to the Supabase project.
 
 ### [ ] Test infrastructure — zero test files
 **Severity:** P2 — quality/risk
-> The project has no Jest/Vitest configuration and no test files. Critical paths (copy trading executor, webhook handlers, position sync) are exercised only in production.
+> The project has no Jest/Vitest configuration and no test files.
 >
-> **Fix:** Add Vitest (`npm install -D vitest @vitejs/plugin-react`), configure in `vite.config.ts`, write tests for:
-> - `executor.ts`: all error branches (no signal, no follow, no brokerage, qty <= 0, etc.)
-> - `webhooks/plaid/route.ts`: mock Plaid payload, verify DB side effects
-> - `lib/plaid/client.ts transformHoldingsToPositions()`: edge case (missing security)
-> - `usePolygonPrices.ts`: WebSocket message parsing, reconnect behavior
+> **Action:** `npm install -D vitest @vitejs/plugin-react`, configure in `vite.config.ts`, write tests for executor.ts, webhooks/plaid/route.ts, transformHoldingsToPositions, usePolygonPrices.
 
----
+### [x] ~~Signal rationale XSS risk~~
+**Fixed:** `signal.rationale` now escaped with `.replace(/</g, "&lt;").replace(/>/g, "&gt;")` before rendering.
 
-### [ ] Signal rationale XSS risk
-**File:** `src/app/(app)/traders/[username]/page.tsx:206`
-> `{signal.rationale}` is rendered without HTML escaping. A trader who stores `<script>` in their rationale field could execute JS in other users' browsers.
->
-> **Fix:** Escape HTML entities before rendering, same as ChatRoom message content fix.
+### [x] ~~Copy trading rate limiting~~
+**Fixed:** `src/lib/rate-limit.ts` — in-memory rate limiter (10 exec/min per user). Applied to `executeCopyTrade` and `processAllFollowers`.
 
----
+### [x] ~~Delete Account — no confirmation dialog~~
+**Fixed:** `DeleteAccountButton` now has a two-step confirm ("Are you sure?") before calling `deleteAccount`.
 
-### [ ] Copy trading rate limiting
-**Files:** `src/app/actions/copy-trading.ts`
-> `executeCopyTrade` and `processAllFollowers` have no rate limiting. An attacker or buggy client could spam copy trade triggers.
->
-> **Fix:** Add rate limiting middleware (e.g., Upstash Redis or in-memory with `rate-limiter-flexible`) keyed on `user.id`. Cap at ~10 executions per minute per user.
-
----
-
-### [ ] Delete Account — no confirmation dialog
-**File:** `src/app/(app)/settings/page.tsx:282`
-> Button deletes immediately on click with no confirmation modal and no CSRF protection.
->
-> **Fix:** Add a confirmation dialog (e.g., `<dialog>` or modal) requiring the user to type "DELETE" or confirm before calling the delete action. Add a CSRF token via `serverAction` with `useFormStatus` or a hidden nonce.
-
----
-
-### [ ] Profile update — no server-side validation
-**File:** `src/app/(app)/settings/page.tsx:80-96`
-> Username, display name, and bio are accepted without server-side length/content validation. Client-side username sanitization in signup can be bypassed.
->
-> **Fix:** Add server-side validation in the profile update server action:
-> - username: 3-30 chars, alphanumeric + underscore, unique
-> - display_name: max 100 chars
-> - bio: max 500 chars
+### [x] ~~Profile update — no server-side validation~~
+**Fixed:** `saveProfile` already validates username 3-30 chars alphanumeric+underscore, bio max 500 chars.
 
 ---
 
