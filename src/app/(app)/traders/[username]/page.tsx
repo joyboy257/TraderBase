@@ -214,7 +214,7 @@ export default async function TraderProfilePage({
                 </div>
                 {signal.rationale && (
                   <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
-                    {signal.rationale}
+                    {signal.rationale.replace(/</g, "&lt;").replace(/>/g, "&gt;")}
                   </p>
                 )}
               </Card>

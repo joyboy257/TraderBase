@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { CopyExecutionResult, CopiedTrade } from "@/types/copy-trading";
 import { getInvestmentHoldings, postInvestmentOrder } from "@/lib/plaid/client";
 import { decrypt } from "@/lib/crypto";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 // Signal type from the database
 interface Signal {
@@ -61,6 +62,13 @@ function getServiceClient() {
  */
 export async function executeCopyTrade(followerId: string, signalId: string): Promise<CopyExecutionResult> {
   try {
+    // Rate limit check — prevent spam/abuse
+    const { allowed, remaining } = checkRateLimit(followerId);
+    if (!allowed) {
+      console.warn(`[Copy Trading] Rate limit exceeded for user ${followerId}`);
+      return { success: false, error: "Rate limit exceeded. Please try again later." };
+    }
+
     const serviceClient = getServiceClient();
 
     // Step 1: Get the signal
@@ -301,6 +309,13 @@ export async function processAllFollowers(signalId: string): Promise<void> {
     }
 
     const typedSignal = signal as Signal;
+
+    // Rate limit check at the leader level — prevent signal spam from triggering follower cascade
+    const { allowed } = checkRateLimit(typedSignal.user_id);
+    if (!allowed) {
+      console.warn(`[Copy Trading] Rate limit exceeded for leader ${typedSignal.user_id}, skipping follower processing`);
+      return;
+    }
 
     // Get all active followers of this leader with copy_ratio > 0
     const { data: followers, error: followersError } = await serviceClient

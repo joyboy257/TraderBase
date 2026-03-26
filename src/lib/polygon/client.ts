@@ -32,6 +32,10 @@ export function connectPolygonWS(
   let ws: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let closed = false;
+  let reconnectAttempt = 0;
+  const BASE_DELAY_MS = 1000;    // 1 second
+  const MAX_DELAY_MS = 30000;    // 30 seconds cap
+  const JITTER_MS = 500;         // ±500ms random jitter
 
   function connect() {
     if (closed) return;
@@ -40,6 +44,7 @@ export function connectPolygonWS(
 
     ws.onopen = () => {
       console.log("[Polygon WS] Connected");
+      reconnectAttempt = 0;
       ws!.send(JSON.stringify({ action: "subscribe", params: symbols }));
     };
 
@@ -72,8 +77,13 @@ export function connectPolygonWS(
     ws.onclose = () => {
       console.log("[Polygon WS] Disconnected");
       if (!closed) {
-        console.log("[Polygon WS] Reconnecting in 3s...");
-        reconnectTimer = setTimeout(connect, 3000);
+        reconnectAttempt++;
+        const delay = Math.min(
+          BASE_DELAY_MS * Math.pow(2, reconnectAttempt - 1) + Math.random() * JITTER_MS,
+          MAX_DELAY_MS
+        );
+        console.log(`[Polygon WS] Reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempt})...`);
+        reconnectTimer = setTimeout(connect, delay);
       }
     };
   }
