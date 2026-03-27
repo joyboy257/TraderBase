@@ -108,15 +108,21 @@ export async function getLastTrade(ticker: string): Promise<{ price: number; tim
     throw new Error("POLYGON_API_KEY is not set");
   }
   const url = `https://api.polygon.io/v3/last-trade/${ticker}?apiKey=${POLYGON_API_KEY}`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Polygon REST API error: ${res.status} ${res.statusText}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) {
+      throw new Error(`Polygon REST API error: ${res.status} ${res.statusText}`);
+    }
+    const data = await res.json();
+    if (!data.results) {
+      throw new Error(`No trade data for ticker ${ticker}`);
+    }
+    return { price: data.results.p, timestamp: data.results.t };
+  } finally {
+    clearTimeout(timeout);
   }
-  const data = await res.json();
-  if (!data.results) {
-    throw new Error(`No trade data for ticker ${ticker}`);
-  }
-  return { price: data.results.p, timestamp: data.results.t };
 }
 
 /**
@@ -128,15 +134,21 @@ export async function getPreviousClose(ticker: string): Promise<{ close: number 
     throw new Error("POLYGON_API_KEY is not set");
   }
   const url = `https://api.polygon.io/v2/aggs/ticker/${ticker}/prev?adjusted=true&apiKey=${POLYGON_API_KEY}`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Polygon REST API error: ${res.status} ${res.statusText}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) {
+      throw new Error(`Polygon REST API error: ${res.status} ${res.statusText}`);
+    }
+    const data = await res.json();
+    if (!data.results || data.results.length === 0) {
+      throw new Error(`No previous close data for ticker ${ticker}`);
+    }
+    return { close: data.results[0].c };
+  } finally {
+    clearTimeout(timeout);
   }
-  const data = await res.json();
-  if (!data.results || data.results.length === 0) {
-    throw new Error(`No previous close data for ticker ${ticker}`);
-  }
-  return { close: data.results[0].c };
 }
 
 /**
@@ -170,23 +182,29 @@ export async function getQuote(ticker: string): Promise<PolygonQuote> {
     // Fallback to the original /range/1/day/1/now approach
     console.warn(`[getQuote] getLastTrade failed, falling back to range/1/day/1/now: ${err}`);
     const url = `https://api.polygon.io/v2/aggs/ticker/${ticker}/range/1/day/1/now?adjusted=true&apiKey=${POLYGON_API_KEY}`;
-    const res = await fetch(url);
-    if (!res.ok) {
-      throw new Error(`Polygon REST API error: ${res.status} ${res.statusText}`);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) {
+        throw new Error(`Polygon REST API error: ${res.status} ${res.statusText}`);
+      }
+
+      const data = await res.json();
+      if (!data.results || data.results.length === 0) {
+        throw new Error(`No results for ticker ${ticker}`);
+      }
+
+      const result = data.results[data.results.length - 1];
+      const close = result.c;
+      const prevCloseFallback = result.o;
+
+      const change = parseFloat((close - prevCloseFallback).toFixed(4));
+      const changePercent = prevCloseFallback > 0 ? parseFloat(((change / prevCloseFallback) * 100).toFixed(2)) : 0;
+
+      return { price: close, change, changePercent };
+    } finally {
+      clearTimeout(timeout);
     }
-
-    const data = await res.json();
-    if (!data.results || data.results.length === 0) {
-      throw new Error(`No results for ticker ${ticker}`);
-    }
-
-    const result = data.results[data.results.length - 1];
-    const close = result.c;
-    const prevCloseFallback = result.o;
-
-    const change = parseFloat((close - prevCloseFallback).toFixed(4));
-    const changePercent = prevCloseFallback > 0 ? parseFloat(((change / prevCloseFallback) * 100).toFixed(2)) : 0;
-
-    return { price: close, change, changePercent };
   }
 }

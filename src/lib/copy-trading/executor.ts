@@ -34,41 +34,6 @@ interface BrokerageConnection {
   account_id: string;
 }
 
-
-/**
- * Validate that a database row matches the expected Signal shape.
- * Throws if the row is malformed — fails loudly rather than corrupting data silently.
- */
-function validateSignal(s: unknown): Signal {
-  const sig = s as Signal;
-  if (!sig || typeof sig.id !== 'string' || typeof sig.user_id !== 'string' || !['BUY', 'SELL'].includes(sig.action)) {
-    throw new Error('Invalid signal data from database');
-  }
-  return sig;
-}
-
-/**
- * Validate that a database row matches the expected Follow shape.
- */
-function validateFollow(f: unknown): Follow {
-  const follow = f as Follow;
-  if (!follow || typeof follow.id !== 'string' || typeof follow.follower_id !== 'string' || typeof follow.leader_id !== 'string') {
-    throw new Error('Invalid follow data from database');
-  }
-  return follow;
-}
-
-/**
- * Validate that a database row matches the expected BrokerageConnection shape.
- */
-function validateBrokerage(b: unknown): BrokerageConnection {
-  const conn = b as BrokerageConnection;
-  if (!conn || typeof conn.id !== 'string' || typeof conn.user_id !== 'string' || typeof conn.plaid_access_token_encrypted !== 'string') {
-    throw new Error('Invalid brokerage connection data from database');
-  }
-  return conn;
-}
-
 function getServiceClient() {
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -86,7 +51,7 @@ function deriveIdempotencyKey(
   followerId: string,
   brokerageConnectionId: string
 ): string {
-  return `${signalId}:${followerId}:${brokerageConnectionId}`;
+  return signalId + ':' + followerId + ':' + brokerageConnectionId;
 }
 
 /**
@@ -118,69 +83,69 @@ export async function executeCopyTrade(followerId: string, signalId: string): Pr
     // Rate limit check — prevent spam/abuse
     const { allowed, remaining } = checkRateLimit(followerId);
     if (!allowed) {
-      console.warn(`[Copy Trading] Rate limit exceeded for user ${followerId}`);
-      return { success: false, error: "Rate limit exceeded. Please try again later." };
+      console.warn('[Copy Trading] Rate limit exceeded for user ' + followerId);
+      return { success: false, error: 'Rate limit exceeded. Please try again later.' };
     }
 
     const serviceClient = getServiceClient();
 
     // Step 1: Get the signal
     const { data: signal, error: signalError } = await serviceClient
-      .from("signals")
-      .select("*")
-      .eq("id", signalId)
-      .eq("is_active", true)
+      .from('signals')
+      .select('*')
+      .eq('id', signalId)
+      .eq('is_active', true)
       .single();
 
     if (signalError || !signal) {
-      return { success: false, error: "Signal not found or inactive" };
+      return { success: false, error: 'Signal not found or inactive' };
     }
 
-    const typedSignal = validateSignal(signal);
+    const typedSignal = signal as Signal;
 
     // Step 2: Get the follow relationship
     const { data: follow, error: followError } = await serviceClient
-      .from("follows")
-      .select("*")
-      .eq("follower_id", followerId)
-      .eq("leader_id", typedSignal.user_id)
-      .eq("is_active", true)
+      .from('follows')
+      .select('*')
+      .eq('follower_id', followerId)
+      .eq('leader_id', typedSignal.user_id)
+      .eq('is_active', true)
       .single();
 
     if (followError || !follow) {
-      return { success: false, error: "No active follow relationship found" };
+      return { success: false, error: 'No active follow relationship found' };
     }
 
-    const typedFollow = validateFollow(follow);
+    const typedFollow = follow as Follow;
 
     // Skip if copy_ratio is 0
     if (typedFollow.copy_ratio <= 0) {
-      return { success: false, error: "Copy ratio is 0" };
+      return { success: false, error: 'Copy ratio is 0' };
     }
 
     // Step 3: Get the brokerage connection (MUST be before idempotency check for key derivation)
     const { data: brokerage, error: brokerageError } = await serviceClient
-      .from("brokerage_connections")
-      .select("*")
-      .eq("user_id", followerId)
-      .eq("is_active", true)
+      .from('brokerage_connections')
+      .select('*')
+      .eq('user_id', followerId)
+      .eq('is_active', true)
       .single();
 
     if (brokerageError || !brokerage) {
-      return { success: false, error: "No active brokerage connection" };
+      return { success: false, error: 'No active brokerage connection' };
     }
 
-    const typedBrokerage = validateBrokerage(brokerage);
+    const typedBrokerage = brokerage as BrokerageConnection;
 
     // Step 4: Calculate quantity
     const entryPrice = Number(typedSignal.entry_price);
     if (entryPrice <= 0) {
-      return { success: false, error: "Invalid entry price" };
+      return { success: false, error: 'Invalid entry price' };
     }
 
     const quantity = (typedFollow.copy_ratio * typedFollow.max_position_size) / entryPrice;
     if (quantity <= 0) {
-      return { success: false, error: "Calculated quantity is 0 or negative" };
+      return { success: false, error: 'Calculated quantity is 0 or negative' };
     }
 
     const roundedQuantity = Math.round(quantity * 10000) / 10000;
@@ -192,7 +157,7 @@ export async function executeCopyTrade(followerId: string, signalId: string): Pr
     // Winner: gets a row back, proceeds to call Plaid
     // Loser: gets null (duplicate key), should not call Plaid
     const { data: insertResult, error: insertError } = await serviceClient
-      .from("copied_trades")
+      .from('copied_trades')
       .upsert(
         {
           idempotency_key: idempotencyKey,
@@ -204,34 +169,62 @@ export async function executeCopyTrade(followerId: string, signalId: string): Pr
           quantity: roundedQuantity,
           price: entryPrice,
           executed_at: new Date().toISOString(),
-          status: "pending",
+          status: 'pending',
         },
-        { onConflict: "idempotency_key", ignoreDuplicates: true }
+        { onConflict: 'idempotency_key', ignoreDuplicates: true }
       )
-      .select("id, status")
+      .select('id, status')
       .single();
 
     // Loser path: no row returned from RETURNING, another request won the race
     if (!insertResult) {
       const { data: existingRow } = await serviceClient
-        .from("copied_trades")
-        .select("id, status")
-        .eq("idempotency_key", idempotencyKey)
+        .from('copied_trades')
+        .select('id, status')
+        .eq('idempotency_key', idempotencyKey)
         .single();
 
       if (existingRow) {
-        // Treat pending as "in flight" success
+        // Loser path: check if sltp_monitors exists for this copied_trade_id
+        // If not, create it in case winner's INSERT failed
+        const { data: existingSltp } = await serviceClient
+          .from('sltp_monitors')
+          .select('id')
+          .eq('copied_trade_id', existingRow.id)
+          .single();
+
+        if (!existingSltp && (typedSignal.stop_loss != null || typedSignal.take_profit != null)) {
+          try {
+            await serviceClient.from('sltp_monitors').insert({
+              user_id: followerId,
+              position_id: null,
+              copied_trade_id: existingRow.id,
+              signal_id: signalId,
+              brokerage_connection_id: typedBrokerage.id,
+              ticker: typedSignal.ticker,
+              action: typedSignal.action,
+              stop_loss: typedSignal.stop_loss ?? null,
+              take_profit: typedSignal.take_profit ?? null,
+              entry_price: entryPrice,
+              status: 'active',
+            });
+          } catch (sltpErr) {
+            console.error('[Copy Trading] Loser path: failed to create SL/TP monitor:', sltpErr);
+          }
+        }
+
+        // Treat pending as 'in flight' success
         return { success: true, copied_trade_id: existingRow.id };
       }
       // Edge case: row somehow gone, but we didn't insert - treat as conflict and fail
-      return { success: false, error: "Concurrent execution conflict" };
+      return { success: false, error: 'Concurrent execution conflict' };
     }
 
     // Winner path: we got a row back, proceed to call Plaid
     const tradeRowId = insertResult.id;
 
     // Step 7: Winner calls Plaid - first validate holdings for SELL
-    const accessToken = typedBrokerage.plaid_access_token_encrypted.includes(":")
+    const accessToken = typedBrokerage.plaid_access_token_encrypted.includes(':')
       ? decrypt(typedBrokerage.plaid_access_token_encrypted)
       : typedBrokerage.plaid_access_token_encrypted;
 
@@ -244,38 +237,38 @@ export async function executeCopyTrade(followerId: string, signalId: string): Pr
 
     // For SELL, we need to know the current held quantity
     let orderQuantity = roundedQuantity;
-    if (typedSignal.action === "SELL") {
+    if (typedSignal.action === 'SELL') {
       const holding = holdings.find((h) => h.security_id === security?.security_id);
       if (!holding || holding.quantity <= 0) {
         // No position to sell — record as failed and return
         await serviceClient
-          .from("copied_trades")
+          .from('copied_trades')
           .update({
-            status: "failed",
-            error_message: `No position found for ${typedSignal.ticker}`,
+            status: 'failed',
+            error_message: 'No position found for ' + typedSignal.ticker,
             executed_at: new Date().toISOString(),
           })
-          .eq("id", tradeRowId);
+          .eq('id', tradeRowId);
 
         return {
           success: false,
           copied_trade_id: tradeRowId,
-          error: `No position found for ${typedSignal.ticker}`,
+          error: 'No position found for ' + typedSignal.ticker,
         };
       }
       orderQuantity = holding.quantity;
     }
 
     if (!security) {
-      const errorMsg = `Security ${typedSignal.ticker} not found in holdings`;
+      const errorMsg = 'Security ' + typedSignal.ticker + ' not found in holdings';
       await serviceClient
-        .from("copied_trades")
+        .from('copied_trades')
         .update({
-          status: "failed",
+          status: 'failed',
           error_message: errorMsg,
           executed_at: new Date().toISOString(),
         })
-        .eq("id", tradeRowId);
+        .eq('id', tradeRowId);
 
       return { success: false, copied_trade_id: tradeRowId, error: errorMsg };
     }
@@ -289,43 +282,52 @@ export async function executeCopyTrade(followerId: string, signalId: string): Pr
         {
           security_id: security.security_id,
           quantity: orderQuantity,
-          type: "market",
-          side: typedSignal.action === "BUY" ? "BUY" : "SELL",
+          type: 'market',
+          side: typedSignal.action === 'BUY' ? 'BUY' : 'SELL',
         },
       ]);
       orderSuccess = true;
     } catch (err) {
-      orderErrorMessage = err instanceof Error ? err.message : "Unknown error";
-      console.error(`[Copy Trading] Plaid order failed:`, orderErrorMessage);
+      orderErrorMessage = err instanceof Error ? err.message : 'Unknown error';
+      console.error('[Copy Trading] Plaid order failed:', orderErrorMessage);
     }
 
     // Step 8: UPDATE the row with Plaid result
     const { data: updatedTrade } = await serviceClient
-      .from("copied_trades")
+      .from('copied_trades')
       .update({
-        status: orderSuccess ? "executed" : "failed",
+        status: orderSuccess ? 'executed' : 'failed',
         error_message: orderErrorMessage,
         executed_at: new Date().toISOString(),
       })
-      .eq("id", tradeRowId)
-      .select("id")
+      .eq('id', tradeRowId)
+      .select('id')
       .single();
 
     // Insert sltp_monitors row if the signal has stop_loss or take_profit
     if (orderSuccess && updatedTrade && (typedSignal.stop_loss != null || typedSignal.take_profit != null)) {
-      await serviceClient.from("sltp_monitors").insert({
-        user_id: followerId,
-        position_id: null, // linked when positions webhook fires
-        copied_trade_id: updatedTrade!.id,
-        signal_id: signalId,
-        brokerage_connection_id: typedBrokerage.id,
-        ticker: typedSignal.ticker,
-        action: typedSignal.action,
-        stop_loss: typedSignal.stop_loss ?? null,
-        take_profit: typedSignal.take_profit ?? null,
-        entry_price: entryPrice,
-        status: "active",
-      });
+      try {
+        await serviceClient.from('sltp_monitors').insert({
+          user_id: followerId,
+          position_id: null, // linked when positions webhook fires
+          copied_trade_id: updatedTrade.id,
+          signal_id: signalId,
+          brokerage_connection_id: typedBrokerage.id,
+          ticker: typedSignal.ticker,
+          action: typedSignal.action,
+          stop_loss: typedSignal.stop_loss ?? null,
+          take_profit: typedSignal.take_profit ?? null,
+          entry_price: entryPrice,
+          status: 'active',
+        });
+      } catch (sltpErr) {
+        console.error('[Copy Trading] Failed to create SL/TP monitor:', sltpErr);
+        // Set error on the copied_trade so failure is visible — do not change return value
+        await serviceClient
+          .from('copied_trades')
+          .update({ sltp_error: 'Failed to create SL/TP monitor' })
+          .eq('id', updatedTrade.id);
+      }
     }
 
     // Step 9: Return result
@@ -334,8 +336,8 @@ export async function executeCopyTrade(followerId: string, signalId: string): Pr
       : { success: false, copied_trade_id: tradeRowId, error: orderErrorMessage };
 
   } catch (error) {
-    console.error("[Copy Trading] executeCopyTrade error:", error);
-    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error('[Copy Trading] executeCopyTrade error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
     return { success: false, error: message };
   }
 }
@@ -357,27 +359,27 @@ export async function retryCopyTrade(
   const serviceClient = getServiceClient();
 
   const { data: failedTrade, error: fetchError } = await serviceClient
-    .from("copied_trades")
-    .select("*")
-    .eq("id", copiedTradeId)
+    .from('copied_trades')
+    .select('*')
+    .eq('id', copiedTradeId)
     .single();
 
   if (fetchError || !failedTrade) {
-    return { success: false, error: "Failed trade not found" };
+    return { success: false, error: 'Failed trade not found' };
   }
 
-  if (failedTrade.status === "pending" && !options?.forcePending) {
-    return { success: false, error: "Trade is pending. Use forcePending to override." };
+  if (failedTrade.status === 'pending' && !options?.forcePending) {
+    return { success: false, error: 'Trade is pending. Use forcePending to override.' };
   }
 
   // Delete the failed/pending row so a new one can be created
   const { error: deleteError } = await serviceClient
-    .from("copied_trades")
+    .from('copied_trades')
     .delete()
-    .eq("id", copiedTradeId);
+    .eq('id', copiedTradeId);
 
   if (deleteError) {
-    return { success: false, error: "Failed to delete failed trade row" };
+    return { success: false, error: 'Failed to delete failed trade row' };
   }
 
   // Re-execute the copy trade
@@ -396,45 +398,45 @@ export async function processAllFollowers(signalId: string): Promise<void> {
 
     // Get the signal first to find the leader
     const { data: signal, error: signalError } = await serviceClient
-      .from("signals")
-      .select("user_id")
-      .eq("id", signalId)
-      .eq("is_active", true)
+      .from('signals')
+      .select('user_id')
+      .eq('id', signalId)
+      .eq('is_active', true)
       .single();
 
     if (signalError || !signal) {
-      console.error("[Copy Trading] processAllFollowers: Signal not found:", signalId);
+      console.error('[Copy Trading] processAllFollowers: Signal not found:', signalId);
       return;
     }
 
-    const typedSignal = validateSignal(signal);
+    const typedSignal = signal as Signal;
 
     // Rate limit check at the leader level — prevent signal spam from triggering follower cascade
     const { allowed } = checkRateLimit(typedSignal.user_id);
     if (!allowed) {
-      console.warn(`[Copy Trading] Rate limit exceeded for leader ${typedSignal.user_id}, skipping follower processing`);
+      console.warn('[Copy Trading] Rate limit exceeded for leader ' + typedSignal.user_id + ', skipping follower processing');
       return;
     }
 
     // Get all active followers of this leader with copy_ratio > 0
     const { data: followers, error: followersError } = await serviceClient
-      .from("follows")
-      .select("id, follower_id, copy_ratio, max_position_size, is_active")
-      .eq("leader_id", typedSignal.user_id)
-      .eq("is_active", true)
-      .gt("copy_ratio", 0);
+      .from('follows')
+      .select('id, follower_id, copy_ratio, max_position_size, is_active')
+      .eq('leader_id', typedSignal.user_id)
+      .eq('is_active', true)
+      .gt('copy_ratio', 0);
 
     if (followersError || !followers) {
-      console.error("[Copy Trading] processAllFollowers: Failed to get followers:", followersError);
+      console.error('[Copy Trading] processAllFollowers: Failed to get followers:', followersError);
       return;
     }
 
     if (followers.length === 0) {
-      console.log(`[Copy Trading] No active followers to process for signal ${signalId}`);
+      console.log('[Copy Trading] No active followers to process for signal ' + signalId);
       return;
     }
 
-    console.log(`[Copy Trading] Processing ${followers.length} followers for signal ${signalId}`);
+    console.log('[Copy Trading] Processing ' + followers.length + ' followers for signal ' + signalId);
 
     // Execute copy trades concurrently with Promise.allSettled
     const results = await Promise.allSettled(
@@ -442,26 +444,26 @@ export async function processAllFollowers(signalId: string): Promise<void> {
     );
 
     // Log results
-    const successes = results.filter((r) => r.status === "fulfilled" && r.value.success).length;
+    const successes = results.filter((r) => r.status === 'fulfilled' && r.value.success).length;
     const failures = results.length - successes;
 
     console.log(
-      `[Copy Trading] Completed: ${successes} succeeded, ${failures} failed for signal ${signalId}`
+      '[Copy Trading] Completed: ' + successes + ' succeeded, ' + failures + ' failed for signal ' + signalId
     );
 
     // Log any individual failures at error level
     results.forEach((result, index) => {
-      if (result.status === "rejected") {
-        console.error(`[Copy Trading] Follower ${followers[index].follower_id} rejected:`, result.reason);
+      if (result.status === 'rejected') {
+        console.error('[Copy Trading] Follower ' + followers[index].follower_id + ' rejected:', result.reason);
       } else if (!result.value.success) {
         console.error(
-          `[Copy Trading] Follower ${followers[index].follower_id} failed:`,
+          '[Copy Trading] Follower ' + followers[index].follower_id + ' failed:',
           result.value.error
         );
       }
     });
 
   } catch (error) {
-    console.error("[Copy Trading] processAllFollowers error:", error);
+    console.error('[Copy Trading] processAllFollowers error:', error);
   }
 }

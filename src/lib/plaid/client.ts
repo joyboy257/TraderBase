@@ -21,6 +21,7 @@ const config = new Configuration({
       "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID ?? "",
       "PLAID-SECRET": process.env.PLAID_SECRET ?? "",
     },
+    timeout: 30_000,
   },
 });
 
@@ -97,6 +98,7 @@ export async function postInvestmentOrder(
         "PLAID-SECRET": process.env.PLAID_SECRET ?? "",
         "Content-Type": "application/json",
       },
+      timeout: 30_000,
     }
   );
   return response.data;
@@ -118,6 +120,7 @@ export async function verifyPlaidWebhook(accessToken: string): Promise<boolean> 
           "PLAID-SECRET": process.env.PLAID_SECRET ?? "",
           "Content-Type": "application/json",
         },
+        timeout: 30_000,
       }
     );
     return response.status === 200;
@@ -150,6 +153,7 @@ export async function getPlaidWebhookVerificationKey(): Promise<PlaidWebhookVeri
         "PLAID-SECRET": process.env.PLAID_SECRET ?? "",
         "Content-Type": "application/json",
       },
+      timeout: 30_000,
     }
   );
   cachedVerificationKey = response.data;

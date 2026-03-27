@@ -39,9 +39,16 @@ export async function handleSyncUpdatesAvailable(
     return;
   }
 
-  const { accounts, holdings, securities } = await getInvestmentHoldings(
+  const holdingsResult = await getInvestmentHoldings(
     connection.plaid_access_token_encrypted
   );
+
+  if (!holdingsResult || !holdingsResult.accounts || !holdingsResult.holdings || !holdingsResult.securities) {
+    console.error("[handleSyncUpdatesAvailable] Invalid holdings result for item_id:", itemId);
+    return;
+  }
+
+  const { accounts, holdings, securities } = holdingsResult;
 
   const positions = transformHoldingsToPositions(
     accounts,
@@ -52,12 +59,22 @@ export async function handleSyncUpdatesAvailable(
   );
 
   if (positions.length > 0) {
-    await serviceClient.from("positions").upsert(positions, {
-      onConflict: "user_id,brokerage_connection_id,ticker",
-    });
+    try {
+      await serviceClient.from("positions").upsert(positions, {
+        onConflict: "user_id,brokerage_connection_id,ticker",
+      });
+    } catch (upsertError) {
+      console.error("[handleSyncUpdatesAvailable] Position upsert failed:", upsertError);
+      throw upsertError;
+    }
 
     // Upsert security_id_cache for all securities in this connection
-    await upsertSecurityIdsFromHoldings(connection.id, securities);
+    try {
+      await upsertSecurityIdsFromHoldings(connection.id, securities);
+    } catch (cacheError) {
+      console.error("[handleSyncUpdatesAvailable] Security cache upsert failed:", cacheError);
+      // Continue - positions already upserted
+    }
 
     // Query the upserted positions to get their IDs for linking
     const tickers = positions.map((p) => p.ticker);
@@ -71,13 +88,17 @@ export async function handleSyncUpdatesAvailable(
     // Link any unlinked sltp_monitors to the newly upserted positions
     if (upsertedPositions && upsertedPositions.length > 0) {
       for (const pos of upsertedPositions) {
-        await serviceClient
-          .from("sltp_monitors")
-          .update({ position_id: pos.id })
-          .eq("user_id", connection.user_id)
-          .eq("ticker", pos.ticker)
-          .eq("brokerage_connection_id", connection.id)
-          .is("position_id", null);
+        try {
+          await serviceClient
+            .from("sltp_monitors")
+            .update({ position_id: pos.id })
+            .eq("user_id", connection.user_id)
+            .eq("ticker", pos.ticker)
+            .eq("brokerage_connection_id", connection.id)
+            .is("position_id", null);
+        } catch (linkError) {
+          console.error(`[handleSyncUpdatesAvailable] Failed to link monitor to position ${pos.id}:`, linkError);
+        }
       }
     }
   }

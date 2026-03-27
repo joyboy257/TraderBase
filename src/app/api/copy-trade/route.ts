@@ -3,7 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 import { executeCopyTrade } from "@/lib/copy-trading/executor";
 import { CopyExecutionResult } from "@/types/copy-trading";
 
-export async function POST(request: NextRequest) {
+const HANDLER_TIMEOUT_MS = 30_000;
+
+async function handleCopyTradeRequest(request: NextRequest): Promise<NextResponse> {
   try {
     // Extract Bearer token from Authorization header
     const authHeader = request.headers.get("Authorization");
@@ -62,6 +64,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { success: false, error: message },
       { status: 500 }
+    );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const timeout = new Promise<NextResponse>((_, reject) =>
+    setTimeout(() => reject(new Error("Handler timeout")), HANDLER_TIMEOUT_MS)
+  );
+  try {
+    const response = await Promise.race([handleCopyTradeRequest(request), timeout]);
+    return response;
+  } catch (error) {
+    console.error("[Copy Trading API] Request timeout or error:", error);
+    return NextResponse.json(
+      { success: false, error: "Request timeout" },
+      { status: 504 }
     );
   }
 }
