@@ -88,7 +88,7 @@ export async function handleItemError(itemId: string): Promise<void> {
 
   const { data: connection } = await serviceClient
     .from("brokerage_connections")
-    .select("plaid_access_token_encrypted")
+    .select("id, user_id, plaid_access_token_encrypted, brokerage_name")
     .eq("plaid_item_id", itemId)
     .eq("is_active", true)
     .single();
@@ -117,5 +117,37 @@ export async function handleItemError(itemId: string): Promise<void> {
   }
 
   console.warn("Brokerage connection deactivated due to ITEM_ERROR:", itemId);
-  // TODO: Notify user via email or in-app notification
+
+  // Insert notification for user
+  const brokerageName = connection.brokerage_name || "your brokerage";
+  const { data: notification, error: notificationError } = await serviceClient
+    .from("notifications")
+    .insert({
+      user_id: connection.user_id,
+      type: "brokerage_deactivated",
+      title: "Brokerage connection lost",
+      body: `Your ${brokerageName} connection was disconnected. Copy trading is paused until you reconnect in Settings.`,
+    })
+    .select("id, type, title, body, created_at")
+    .single();
+
+  if (notificationError) {
+    console.error("Failed to insert notification for user:", connection.user_id, notificationError);
+    // Don't return — deactivation already happened, we just couldn't notify
+  }
+
+  // Broadcast via Supabase Realtime for real-time in-app notification
+  if (notification) {
+    try {
+      const channel = serviceClient.channel(`notifications:${connection.user_id}`);
+      await channel.send({
+        type: "broadcast",
+        event: "notification_inserted",
+        payload: { notification },
+      });
+    } catch (broadcastError) {
+      // Graceful degradation — notification is in the DB, user sees it on next page load
+      console.error("Failed to broadcast notification:", broadcastError);
+    }
+  }
 }
