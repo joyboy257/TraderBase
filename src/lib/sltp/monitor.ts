@@ -363,15 +363,26 @@ export async function runMonitorCycle(): Promise<{
       };
 
       const statusUpdate: Record<string, unknown> = {
-        status: statusMap[triggerType],
         triggered_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
 
-      if (triggerType === "sl" || triggerType === "trailing") {
-        statusUpdate.sl_order_id = orderId;
+      if (orderId === null) {
+        // Order failed to place — do not mark as triggered
+        statusUpdate.status = triggerType + "_place_failed";
+        statusUpdate.error_message = "Order failed to place — manual intervention required";
+        if (triggerType === "sl" || triggerType === "trailing") {
+          statusUpdate.sl_order_id = null;
+        } else {
+          statusUpdate.tp_order_id = null;
+        }
       } else {
-        statusUpdate.tp_order_id = orderId;
+        statusUpdate.status = statusMap[triggerType];
+        if (triggerType === "sl" || triggerType === "trailing") {
+          statusUpdate.sl_order_id = orderId;
+        } else {
+          statusUpdate.tp_order_id = orderId;
+        }
       }
 
       await serviceClient
