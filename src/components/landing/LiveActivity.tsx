@@ -159,7 +159,10 @@ export function LiveActivity() {
                   </div>
 
                   <div className="text-right">
-                    <span className="text-xs text-[var(--color-text-muted)] block">
+                    <span
+                      className="text-xs text-[var(--color-text-muted)] block"
+                      suppressHydrationWarning
+                    >
                       {timeAgo(currentSignal.time)}
                     </span>
                   </div>
