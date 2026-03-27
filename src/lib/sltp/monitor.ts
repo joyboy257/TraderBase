@@ -154,6 +154,71 @@ async function batchGetLastTrade(
 }
 
 /**
+ * Detect monitors that have been orphaned due to a missed Plaid webhook.
+ * A monitor is orphaned when:
+ * - status = 'active'
+ * - position_id IS NULL
+ * - created_at < NOW() - INTERVAL 'thresholdMinutes' minutes
+ * - brokerage connection is_active = false
+ *
+ * These monitors cannot fire orders because their position link was lost
+ * (typically due to an ITEM_ERROR webhook deactivating the brokerage connection
+ * before the TRANSACTIONS_SYNC webhook could link positions).
+ */
+export async function detectOrphanedMonitors(
+  thresholdMinutes: number = 15
+): Promise<number> {
+  const serviceClient = getServiceClient();
+
+  // Find orphaned monitors: null position_id on an inactive brokerage connection
+  // that have been in this state for longer than the threshold
+  const { data: orphanedMonitors, error } = await serviceClient
+    .from("sltp_monitors")
+    .select("id, user_id, ticker, brokerage_connection_id")
+    .eq("status", "active")
+    .is("position_id", null)
+    .lt("created_at", new Date(Date.now() - thresholdMinutes * 60 * 1000).toISOString());
+
+  if (error || !orphanedMonitors || orphanedMonitors.length === 0) {
+    return 0;
+  }
+
+  // Filter to only those whose brokerage connection is inactive
+  const connectionIds = [...new Set(orphanedMonitors.map((m) => m.brokerage_connection_id))];
+
+  const { data: connections } = await serviceClient
+    .from("brokerage_connections")
+    .select("id, is_active")
+    .in("id", connectionIds)
+    .eq("is_active", false);
+
+  if (!connections || connections.length === 0) {
+    return 0;
+  }
+
+  const inactiveConnectionIds = new Set(connections.map((c) => c.id));
+  const monitorsToOrphan = orphanedMonitors.filter((m) => inactiveConnectionIds.has(m.brokerage_connection_id));
+
+  if (monitorsToOrphan.length === 0) {
+    return 0;
+  }
+
+  // Mark them as orphaned
+  const { error: updateError } = await serviceClient
+    .from("sltp_monitors")
+    .update({ status: "orphaned", updated_at: new Date().toISOString() })
+    .in("id", monitorsToOrphan.map((m) => m.id));
+
+  if (updateError) {
+    console.error("[SLTP Monitor] Failed to mark monitors as orphaned:", updateError);
+    return 0;
+  }
+
+  console.log(`[SLTP Monitor] Marked ${monitorsToOrphan.length} monitors as orphaned`);
+  return monitorsToOrphan.length;
+}
+
+/**
  * Run one cycle of the SL/TP monitor loop.
  * Called by the cron endpoint every 30 minutes.
  */
@@ -161,33 +226,38 @@ export async function runMonitorCycle(): Promise<{
   processed: number;
   triggered: number;
   errors: number;
+  orphaned: number;
 }> {
   if (!isMarketOpen()) {
     console.log("[SLTP Monitor] Outside market hours, skipping cycle");
-    return { processed: 0, triggered: 0, errors: 0 };
+    return { processed: 0, triggered: 0, errors: 0, orphaned: 0 };
   }
 
   const serviceClient = getServiceClient();
 
-  // Fetch all active monitors with their positions
+  // Detect and mark orphaned monitors first
+  const orphanedCount = await detectOrphanedMonitors(15);
+
+  // Fetch all active and orphaned monitors with their positions
+  // Using LEFT JOIN (no !inner) so monitors with null position_id are still returned
   const { data: monitors, error } = await serviceClient
     .from("sltp_monitors")
     .select(
       `
       *,
-      positions!inner(id, quantity, brokerage_connection_id),
+      positions(id, quantity, brokerage_connection_id),
       signals!inner(id)
     `
     )
-    .eq("status", "active");
+    .in("status", ["active", "orphaned"]);
 
   if (error || !monitors) {
     console.error("[SLTP Monitor] Failed to fetch active monitors:", error);
-    return { processed: 0, triggered: 0, errors: 1 };
+    return { processed: 0, triggered: 0, errors: 1, orphaned: orphanedCount };
   }
 
   if (monitors.length === 0) {
-    return { processed: 0, triggered: 0, errors: 0 };
+    return { processed: 0, triggered: 0, errors: 0, orphaned: orphanedCount };
   }
 
   // Collect unique tickers and fetch prices
@@ -197,7 +267,7 @@ export async function runMonitorCycle(): Promise<{
   let triggered = 0;
   let errors = 0;
 
-  for (const monitor of monitors as (SLTPMonitorRow & { positions: { id: string; quantity: number; brokerage_connection_id: string } })[]) {
+  for (const monitor of monitors as (SLTPMonitorRow & { positions: { id: string; quantity: number; brokerage_connection_id: string } | null })[]) {
     const currentPrice = prices.get(monitor.ticker);
     if (currentPrice === undefined) {
       console.warn(`[SLTP Monitor] No price for ${monitor.ticker}, skipping monitor ${monitor.id}`);
@@ -226,10 +296,30 @@ export async function runMonitorCycle(): Promise<{
     // Evaluate trigger
     const triggerType = evaluateTrailingStop(monitor, currentPrice);
 
+    // Skip order placement if position_id is null (orphaned or waiting for first sync)
+    // We still update trailing state above, but cannot fire orders without a linked position
+    if (triggerType !== null && monitor.position_id === null) {
+      // Orphaned monitor with no linked position - skip order placement
+      if (Object.keys(updates).length > 1) {
+        await serviceClient
+          .from("sltp_monitors")
+          .update(updates)
+          .eq("id", monitor.id);
+      }
+      continue;
+    }
+
     if (triggerType !== null) {
       // Determine which order side to place
       const side: "BUY" | "SELL" = monitor.action === "BUY" ? "SELL" : "BUY";
       const position = monitor.positions;
+
+      // Guard: should not happen due to LEFT JOIN + position_id check above, but safety first
+      if (!position) {
+        console.error(`[SLTP Monitor] Monitor ${monitor.id} has no linked position, skipping`);
+        errors++;
+        continue;
+      }
 
       // Get security_id from cache
       const securityId = await getSecurityId(position.brokerage_connection_id, monitor.ticker);
@@ -299,5 +389,5 @@ export async function runMonitorCycle(): Promise<{
     }
   }
 
-  return { processed: monitors.length, triggered, errors };
+  return { processed: monitors.length, triggered, errors, orphaned: orphanedCount };
 }
