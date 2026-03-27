@@ -177,7 +177,7 @@ describe('executeCopyTrade', () => {
           follows: follow,
           brokerage_connections: brokerage,
         };
-        const response = dataMap[table] ?? { data: null, error: null };
+        const response = (dataMap[table] as { data: unknown; error: unknown } | undefined) ?? { data: null, error: null };
 
         // Build a simple chain that returns null for first call, existing row for second
         const chain: Record<string, ReturnType<typeof vi.fn>> = {};
