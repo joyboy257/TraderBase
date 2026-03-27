@@ -34,6 +34,41 @@ interface BrokerageConnection {
   account_id: string;
 }
 
+
+/**
+ * Validate that a database row matches the expected Signal shape.
+ * Throws if the row is malformed — fails loudly rather than corrupting data silently.
+ */
+function validateSignal(s: unknown): Signal {
+  const sig = s as Signal;
+  if (!sig || typeof sig.id !== 'string' || typeof sig.user_id !== 'string' || !['BUY', 'SELL'].includes(sig.action)) {
+    throw new Error('Invalid signal data from database');
+  }
+  return sig;
+}
+
+/**
+ * Validate that a database row matches the expected Follow shape.
+ */
+function validateFollow(f: unknown): Follow {
+  const follow = f as Follow;
+  if (!follow || typeof follow.id !== 'string' || typeof follow.follower_id !== 'string' || typeof follow.leader_id !== 'string') {
+    throw new Error('Invalid follow data from database');
+  }
+  return follow;
+}
+
+/**
+ * Validate that a database row matches the expected BrokerageConnection shape.
+ */
+function validateBrokerage(b: unknown): BrokerageConnection {
+  const conn = b as BrokerageConnection;
+  if (!conn || typeof conn.id !== 'string' || typeof conn.user_id !== 'string' || typeof conn.plaid_access_token_encrypted !== 'string') {
+    throw new Error('Invalid brokerage connection data from database');
+  }
+  return conn;
+}
+
 function getServiceClient() {
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -101,7 +136,7 @@ export async function executeCopyTrade(followerId: string, signalId: string): Pr
       return { success: false, error: "Signal not found or inactive" };
     }
 
-    const typedSignal = signal as Signal;
+    const typedSignal = validateSignal(signal);
 
     // Step 2: Get the follow relationship
     const { data: follow, error: followError } = await serviceClient
@@ -116,7 +151,7 @@ export async function executeCopyTrade(followerId: string, signalId: string): Pr
       return { success: false, error: "No active follow relationship found" };
     }
 
-    const typedFollow = follow as Follow;
+    const typedFollow = validateFollow(follow);
 
     // Skip if copy_ratio is 0
     if (typedFollow.copy_ratio <= 0) {
@@ -135,7 +170,7 @@ export async function executeCopyTrade(followerId: string, signalId: string): Pr
       return { success: false, error: "No active brokerage connection" };
     }
 
-    const typedBrokerage = brokerage as BrokerageConnection;
+    const typedBrokerage = validateBrokerage(brokerage);
 
     // Step 4: Calculate quantity
     const entryPrice = Number(typedSignal.entry_price);
@@ -281,7 +316,7 @@ export async function executeCopyTrade(followerId: string, signalId: string): Pr
       await serviceClient.from("sltp_monitors").insert({
         user_id: followerId,
         position_id: null, // linked when positions webhook fires
-        copied_trade_id: updatedTrade.id,
+        copied_trade_id: updatedTrade!.id,
         signal_id: signalId,
         brokerage_connection_id: typedBrokerage.id,
         ticker: typedSignal.ticker,
@@ -372,7 +407,7 @@ export async function processAllFollowers(signalId: string): Promise<void> {
       return;
     }
 
-    const typedSignal = signal as Signal;
+    const typedSignal = validateSignal(signal);
 
     // Rate limit check at the leader level — prevent signal spam from triggering follower cascade
     const { allowed } = checkRateLimit(typedSignal.user_id);

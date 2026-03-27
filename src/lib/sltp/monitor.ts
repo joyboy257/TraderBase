@@ -261,7 +261,7 @@ export async function runMonitorCycle(): Promise<{
   }
 
   // Collect unique tickers and fetch prices
-  const uniqueTickers = [...new Set(monitors.map((m: SLTPMonitorRow & { positions: { brokerage_connection_id: string } }) => m.ticker))];
+  const uniqueTickers = [...new Set(monitors.map((m: SLTPMonitorRow & { positions: { id: string; quantity: number; brokerage_connection_id: string } | null }) => m.ticker))];
   const prices = await batchGetLastTrade(uniqueTickers);
 
   let triggered = 0;

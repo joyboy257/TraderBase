@@ -50,8 +50,13 @@ export function useNotifications(userId: string | null): UseNotificationsReturn 
     const channel: RealtimeChannel = supabase.channel(`notifications:${userId}`);
 
     channel.on("broadcast", { event: "notification_inserted" }, (payload) => {
-      const notification = payload.payload.notification as Notification;
-      if (notification && notification.user_id === userId) {
+      const rawNotification = payload.payload.notification;
+      if (!rawNotification || typeof rawNotification !== 'object' || !rawNotification.id || !rawNotification.user_id) {
+        console.warn('Invalid notification payload received');
+        return;
+      }
+      const notification = rawNotification as Notification;
+      if (notification.user_id === userId) {
         setNotifications((prev) => [notification, ...prev]);
       }
     });
