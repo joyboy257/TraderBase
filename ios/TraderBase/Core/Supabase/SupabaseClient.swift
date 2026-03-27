@@ -5,6 +5,8 @@ enum SupabaseConfig {
     // TODO: Replace with real values when credentials are ready
     static let supabaseURL = URL(string: "https://placeholder.supabase.co")!
     static let supabaseAnonKey = "placeholder_anon_key"
+    // Next.js app URL for API routes (iOS calls this instead of Supabase Edge Functions)
+    static let appURL = URL(string: "https://placeholder.vercel.app")!
 }
 
 @MainActor

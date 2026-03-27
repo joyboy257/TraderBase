@@ -1,6 +1,19 @@
 import Foundation
 import Supabase
 
+// MARK: - Copy Trade Result
+struct CopyTradeResult: Codable {
+    let success: Bool
+    let copiedTradeId: String?
+    let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case success
+        case copiedTradeId = "copied_trade_id"
+        case error
+    }
+}
+
 class CopyTradingService {
     private let client = SupabaseClientManager.shared.client
 
@@ -56,21 +69,32 @@ class CopyTradingService {
     }
 
     // MARK: - Copy Signal
-    func copySignal(signalId: String) async throws -> Bool {
-        // Calls the server action — in a real app this would be a Supabase Edge Function
-        // For now we call the same logic the web app uses
-        let url = URL(string: "\(SupabaseConfig.supabaseURL)/functions/v1/copy-trade")!
+    func copySignal(signalId: String) async throws -> CopyTradeResult {
+        guard let accessToken = client.auth.session?.accessToken else {
+            throw NSError(domain: "AuthError", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+        }
+
+        let url = URL(string: "\(SupabaseConfig.appURL)/api/copy-trade")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(try await client.auth.session?.accessToken ?? "")", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
 
-        let body = ["signal_id": signalId]
+        let body = ["signalId": signalId]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else { return false }
-        return httpResponse.statusCode == 200
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "NetworkError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
+        }
+
+        if httpResponse.statusCode == 401 {
+            throw NSError(domain: "AuthError", code: 401, userInfo: [NSLocalizedDescriptionKey: "Unauthorized"])
+        }
+
+        let decoder = JSONDecoder()
+        let result = try decoder.decode(CopyTradeResult.self, from: data)
+        return result
     }
 
     // MARK: - Fetch Followed Traders
