@@ -54,7 +54,7 @@ export default function SignupPage() {
                 Create your account
               </h1>
               <p className="text-[var(--color-text-secondary)] text-center mb-8">
-                Join 200,000+ traders sharing real-time signals
+                Get real-time trade signals from top traders in your inbox
               </p>
 
               {/* Signup form */}

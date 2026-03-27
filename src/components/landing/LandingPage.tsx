@@ -26,13 +26,26 @@ export default function LandingPage() {
       // Hero timeline
       const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
 
-      // Gradient background slow rotation
-      gsap.to(".hero-gradient", {
-        backgroundPosition: "200% 200%",
-        duration: 20,
-        repeat: -1,
-        ease: "none",
-      });
+      // Gradient background slow rotation with fade-in
+      const heroGradient = document.querySelector(".hero-gradient");
+      if (heroGradient) {
+        gsap.fromTo(
+          heroGradient,
+          { opacity: 0, backgroundPosition: "0% 0%" },
+          {
+            opacity: 0.3,
+            backgroundPosition: "200% 200%",
+            duration: 1.5,
+            ease: "power2.out",
+          }
+        );
+        gsap.to(heroGradient, {
+          backgroundPosition: "200% 200%",
+          duration: 20,
+          repeat: -1,
+          ease: "none",
+        });
+      }
 
       // Headline split text reveal
       if (headlineRef.current) {
@@ -59,12 +72,14 @@ export default function LandingPage() {
       );
 
       // CTA buttons
-      tl.fromTo(
-        ctaRef.current?.children ?? [],
-        { opacity: 0, y: 20, scale: 0.9 },
-        { opacity: 1, y: 0, scale: 1, duration: 0.5, stagger: 0.1 },
-        "-=0.3"
-      );
+      if (ctaRef.current?.children && ctaRef.current.children.length > 0) {
+        tl.fromTo(
+          ctaRef.current.children,
+          { opacity: 0, y: 20, scale: 0.9 },
+          { opacity: 1, y: 0, scale: 1, duration: 0.5, stagger: 0.1 },
+          "-=0.3"
+        );
+      }
 
       // Floating tickers
       if (tickersRef.current) {
@@ -84,16 +99,19 @@ export default function LandingPage() {
       }
 
       // Floating ticker animation
-      gsap.utils.toArray<HTMLElement>(".floating-ticker").forEach((el) => {
-        gsap.to(el, {
-          y: -15,
-          duration: 2 + Math.random() * 2,
-          repeat: -1,
-          yoyo: true,
-          ease: "sine.inOut",
-          delay: Math.random() * 2,
+      const floatingTickers = gsap.utils.toArray<HTMLElement>(".floating-ticker");
+      if (floatingTickers.length > 0) {
+        floatingTickers.forEach((el) => {
+          gsap.to(el, {
+            y: -15,
+            duration: 2 + Math.random() * 2,
+            repeat: -1,
+            yoyo: true,
+            ease: "sine.inOut",
+            delay: Math.random() * 2,
+          });
         });
-      });
+      }
 
       // Phone mockup rise
       if (phoneRef.current) {
@@ -188,11 +206,12 @@ export default function LandingPage() {
       >
         {/* Animated gradient background */}
         <div
-          className="hero-gradient absolute inset-0 opacity-30"
+          className="hero-gradient absolute inset-0 opacity-0"
           style={{
             background:
               "radial-gradient(ellipse at 30% 20%, rgba(50,255,72,0.15) 0%, transparent 50%), radial-gradient(ellipse at 70% 80%, rgba(111,43,255,0.15) 0%, transparent 50%), radial-gradient(ellipse at 50% 50%, rgba(50,255,72,0.05) 0%, transparent 70%)",
             backgroundSize: "200% 200%",
+            backgroundPosition: "0% 0%",
           }}
         />
 
